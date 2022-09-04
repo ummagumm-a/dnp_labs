@@ -1,0 +1,5 @@
+__pycache__/
+.ipynb_checkpoints/
+lab1/bad_*
+lab1/good_*
+playground.ipynb
