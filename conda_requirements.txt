@@ -14,6 +14,7 @@ https://repo.anaconda.com/pkgs/main/linux-64/bzip2-1.0.8-h7b6447c_0.conda
 https://conda.anaconda.org/anaconda/linux-64/giflib-5.2.1-h7b6447c_0.tar.bz2
 https://conda.anaconda.org/anaconda/linux-64/jpeg-9e-h7f8727e_0.tar.bz2
 https://repo.anaconda.com/pkgs/main/linux-64/libffi-3.3-he6710b0_2.conda
+https://conda.anaconda.org/anaconda/linux-64/libsodium-1.0.18-h7b6447c_0.tar.bz2
 https://repo.anaconda.com/pkgs/main/linux-64/libuuid-1.0.3-h7f8727e_2.conda
 https://conda.anaconda.org/anaconda/linux-64/libwebp-base-1.2.2-h7f8727e_0.tar.bz2
 https://conda.anaconda.org/anaconda/linux-64/lz4-c-1.9.3-h295c915_1.tar.bz2
@@ -24,6 +25,7 @@ https://repo.anaconda.com/pkgs/main/linux-64/zlib-1.2.12-h7f8727e_2.conda
 https://conda.anaconda.org/anaconda/linux-64/libpng-1.6.37-hbc83047_0.tar.bz2
 https://repo.anaconda.com/pkgs/main/linux-64/readline-8.1.2-h7f8727e_1.conda
 https://repo.anaconda.com/pkgs/main/linux-64/tk-8.6.12-h1ccaba5_0.conda
+https://conda.anaconda.org/anaconda/linux-64/zeromq-4.3.4-h2531618_0.tar.bz2
 https://conda.anaconda.org/anaconda/linux-64/zstd-1.5.2-ha4553b6_0.tar.bz2
 https://conda.anaconda.org/anaconda/linux-64/freetype-2.11.0-h70c0345_0.tar.bz2
 https://conda.anaconda.org/anaconda/linux-64/libtiff-4.2.0-h2818925_1.tar.bz2
