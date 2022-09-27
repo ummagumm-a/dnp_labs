@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+service Service {
+    rpc reverse(Text) returns (Text);
+    rpc split(TextSplit) returns (TextSplitResponse);
+    rpc isprime(stream Number) returns (stream IsPrimeResponse);
+}
+
+message Text {
+    string text = 1;
+}
+
+message TextSplit {
+    string text = 1;
+    string delimiter = 2;
+}
+
+message TextSplitResponse {
+    int32 num_parts = 1;
+    repeated string parts = 2;
+}
+
+message Number {
+    int32 number = 1;
+}
+
+message IsPrimeResponse {
+    int32 number = 1;
+    bool isprime = 2;
+}
