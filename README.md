@@ -19,7 +19,14 @@ To run client: `python lab2/client.py <host>:<port>`
 To run server: `python lab2/server.py <port>`
 
 # Lab 3
+**ZeroMQ** is used here.
+
 A chat application. There are two workers which offer different services and work by subscription on message patterns. If a client writes a message 'isprime 7', it will be directed to a worker and the result returned to all clients.
 
 * primer.py: subscribes on 'isprime ...' pattern. Returns whether number is prime.
 * gcd.py: subscribes on 'gcd ...' pattern. Return gcd of two numbers.
+
+# Lab 4
+**gRPC** is used here.
+
+Client CLI offers following functions: `reverse <text>`, `split <text>`, `isprime <num> <num> ...`. Appropriate functions will be called for all of these queries. But what's important is that they will be actually executed on a server.
