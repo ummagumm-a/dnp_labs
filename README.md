@@ -17,3 +17,9 @@ A server which maintains a pool of worker threads. On each request it accepts a 
 To run client: `python lab2/client.py <host>:<port>`
 
 To run server: `python lab2/server.py <port>`
+
+# Lab 3
+A chat application. There are two workers which offer different services and work by subscription on message patterns. If a client writes a message 'isprime 7', it will be directed to a worker and the result returned to all clients.
+
+* primer.py: subscribes on 'isprime ...' pattern. Returns whether number is prime.
+* gcd.py: subscribes on 'gcd ...' pattern. Return gcd of two numbers.
