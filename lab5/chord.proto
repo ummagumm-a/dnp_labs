@@ -1,0 +1,106 @@
+syntax='proto3';
+
+// TODO: 1. verify whether the FindReply works as intended: the FindReply object can contain 2 or 3 fields as indicated in the assignment description
+// TODO: 2. possibly optimize the classes structure: (after guaranteeing minimal functionality)
+
+// the register service
+service Registry {
+  rpc register (RegisterRequest) returns (RegisterReply); // called ONLY by Node objects
+  rpc deregister (DeregisterRequest) returns (DeregisterReply); // called ONLY by Node objects
+  rpc populate_finger_table(PopulateRequest) returns (PopulateReply); // called ONLY by Node objects
+  rpc get_chord_info (InfoRequest) returns (InfoReply); // called ONLY BY CLIENT
+}
+// classes for the register functionality
+message RegisterRequest {
+  string address = 1;
+}
+
+message RegisterReply {
+  int64  id = 1;
+  string message = 2;
+}
+
+// classes for the de register functionality
+message DeregisterRequest {
+  int64 address = 1;
+}
+
+message DeregisterReply {
+  bool result = 1;
+  string message = 2;
+}
+
+// classes for for populate finger table functionality
+
+message PopulateRequest {
+  int64 node_id = 1;
+}
+
+message PopulateReply {
+  int64 predecessor_id = 1;
+  map<int64, string> finger_table = 2;
+}
+
+// classes for the get_info_chord functionality
+
+
+message InfoRequest {}
+
+message InfoReply {
+  map<int64, string> nodes = 1;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// the node service
+service Node {
+  // the same classes used by the Registry are used by the Node as they have the same fields
+  //
+  rpc get_finger_table (InfoRequest) returns (InfoReply);
+  rpc save_key (SaveRequest) returns (SaveReply);
+  rpc remove_key(RemoveRequest) returns (RemoveReply);
+  rpc find_key(FindRequest) returns (FindReply);
+  rpc quit(QuitRequest) returns (QuitReply);
+}
+
+message SaveRequest {
+  string key = 1;
+  string text = 2;
+}
+
+// classes for the save functionality
+message SaveReply {
+  bool result = 1;
+  string message = 2;
+}
+
+// classes for the remove functionality
+message RemoveRequest {
+  string key = 1;
+}
+
+message RemoveReply {
+  bool result = 1;
+  string message = 2;
+}
+
+// classes for the find functionality
+
+message FindRequest {
+string key = 1;
+}
+
+
+message FindReply {
+bool result = 1;
+string message = 2; // either id or error message
+optional string node_addr = 3; // this field might not be necessary
+}
+
+// classes for the quit functionality
+message QuitRequest {}
+
+message QuitReply {
+string message = 1;
+}
