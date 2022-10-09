@@ -64,12 +64,12 @@ service Node {
   rpc quit(QuitRequest) returns (QuitReply);
 }
 
+// classes for the save functionality
 message SaveRequest {
   string key = 1;
   string text = 2;
 }
 
-// classes for the save functionality
 message SaveReply {
   bool result = 1;
   string message = 2;
