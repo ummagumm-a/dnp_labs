@@ -6,7 +6,7 @@ from concurrent import futures
 
 import chord_pb2 as pb2
 import chord_pb2_grpc as pb2_grpc
-from helper_functions import mod
+from utils import mod
 
 # TODO : MAKE SURE THE CODE ACTUALLY WORKS
 
