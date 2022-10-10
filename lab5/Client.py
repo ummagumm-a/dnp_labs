@@ -36,6 +36,8 @@ class ClientConnection:
         try:
             channel = grpc.insecure_channel(f'{ipaddr}:{port}')
             self.stub = pb2_grpc.NodeStub(channel)
+
+            return "Connected sucessfully"
         except:
             raise Exception(f"Couldn't create a connection to {ipaddr}:{port}.")
 
@@ -65,9 +67,9 @@ class ClientConnection:
         """
         def node_callback():
             save_request = pb2.SaveRequest(key=key, text=text)
-            _, message = self.stub.save_key(save_request)
+            response = self.stub.save_key(save_request)
 
-            return message
+            return response.message
 
         def registry_callback():
             raise Exception("Can't save this data. The client is connected to a registry.")
@@ -84,9 +86,9 @@ class ClientConnection:
         """
         def node_callback():
             remove_request = pb2.RemoveRequest(key=key)
-            _, message = self.stub.remove_key(remove_request)
+            response = self.stub.remove_key(remove_request)
 
-            return message
+            return response.message
 
         def registry_callback():
             raise Exception("Can't remove this key. The client is connected to a registry.")
@@ -122,22 +124,22 @@ def make_args(match: re.Match):
     i = 2
     while True:
         try:
-            arg = match[i]
+            arg = match.group(i)
         except:
             return args
         i += 1
-        args.append(args)
+        args.append(arg)
 
 def parse_input(inp: str):
     """
     Accepts an input string and returns query with arguments.
     """
     # List patterns of acceptable messages
-    connect_regex = "(connect) (\d+.\d+.\d+.\d+) (\d+)"
+    connect_regex = "(connect) (\d+.\d+.\d+.\d+):(\d+)"
     get_info_regex = "(get_info)"
-    save_regex = '(save) "(\w+)" "(\w+)"'
-    remove_regex = "(remove) (\w+)"
-    find_regex = "(find) (\w+)"
+    save_regex = '(save) "(\w+)" (.*)'
+    remove_regex = '(remove) "(\w+)"'
+    find_regex = '(find) "(\w+)"'
 
     # Compile them into regex patterns
     patterns = [connect_regex, get_info_regex, save_regex, remove_regex, find_regex]
@@ -160,6 +162,7 @@ def cli_loop():
         if inp == 'exit':
             break
         query, args = parse_input(inp)
+        print(args)
         if query is None:
             print("Incorrect Query")
             continue
