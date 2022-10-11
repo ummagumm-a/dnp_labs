@@ -64,9 +64,10 @@ class Registry(pb2_grpc.RegistryServicer):
     def register(self, request, context):
         node_addr = request.addr
         new_id = self.__generate_id(node_addr)
-        message = self.__full_msg if new_id < 0 else self.__register_msg
-        chord_size = self.m
-        return pb2.RegisterReply(**{"id": new_id, "message": message, "chord_size": chord_size})
+
+        if new_id < 0:
+            return pb2.RegisterReply(id=new_id, error_message=self.__full_msg)
+        return pb2.RegisterReply(id=new_id, m=self.m)
 
     def deregister(self, request, context):
         node_id = request.id
@@ -134,7 +135,7 @@ class Registry(pb2_grpc.RegistryServicer):
             power_two *= 2
 
         # return the PopulateReply object
-        return pb2.PopulateReply(predecessor_id=ft_entry_predecessor, finger_table=finger_table)
+        return pb2.PopulateReply(predecessor=ft_entry_predecessor, finger_table=finger_table)
 
     def get_chord_info(self, request, context):
         # the request is created with no fields, so it will be ignored
