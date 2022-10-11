@@ -64,8 +64,10 @@ class Registry(pb2_grpc.RegistryServicer):
     def register(self, request, context):
         node_addr = request.addr
         new_id = self.__generate_id(node_addr)
-        message = self.__full_msg if new_id < 0 else self.__register_msg
-        return pb2.RegisterReply(**{"id": new_id, "message": message})
+
+        if new_id < 0:
+            return pb2.RegisterReply(id=new_id, error_message=self.__full_msg)
+        return pb2.RegisterReply(id=new_id, m=self.m)
 
     def deregister(self, request, context):
         node_id = request.id
@@ -113,21 +115,27 @@ class Registry(pb2_grpc.RegistryServicer):
         # get a sorted instance of the current node identifiers
         sorted_keys = self.__get_sorted_node_ids()
         # create a set to handle duplicated efficiently
-        finger_table = set()
+        finger_table_keys = set()
+        # create a FingerTableEntry object for the predecessor id
+        predecessor_id = self.__predecessor(node_id, sorted_keys)
+        ft_entry_predecessor = pb2.FingerTableEntry(node_id=predecessor_id, address=self.nodes_map[predecessor_id])
+
+        # create a list to save FingerTableEntry objects corresponding to the rest of the nodes
+        finger_table = []
         power_two = 1
+
         for i in range(self.m):
             # find the successor of ((node_id + 2 ** (m - 1)) % (2 ** m))
-            finger_table.add(self.__successor(mod(node_id + power_two, self.max_size), sorted_keys))
-            power_two *= 2
-        # finds the predecessor
-        predecessor_id = self.__predecessor(node_id, sorted_keys)
+            new_id = self.__successor(mod(node_id + power_two, self.max_size), sorted_keys)
+            # if the new calculated id is not in the set of unique ids, then add it
+            if new_id not in finger_table_keys:
+                new_finger_table_entry = pb2.FingerTableEntry(node_id=new_id, address=self.nodes_map[new_id])
+                finger_table.append(new_finger_table_entry)
 
-        # create the map to return with the PopulateReply object
-        nodes_map = {}
-        for value in finger_table:
-            nodes_map[value] = self.nodes_map[value]
+            power_two *= 2
+
         # return the PopulateReply object
-        return pb2.PopulateReply(**{"predecessor_id": predecessor_id, "finger_table": nodes_map})
+        return pb2.PopulateReply(predecessor=ft_entry_predecessor, finger_table=finger_table)
 
     def get_chord_info(self, request, context):
         # the request is created with no fields, so it will be ignored

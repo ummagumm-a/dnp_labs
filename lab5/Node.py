@@ -98,7 +98,7 @@ class Node(pb2_grpc.NodeServicer):
             channel = grpc.insecure_channel(target_node_address)
             stub = pb2_grpc.NodeStub(channel)
             
-            return eval(f"stub.{operation}")(req)
+            return eval(f"stub.{operation}")(request)
         
     def encode_key(self, key):
         hash_value = zlib.adler32(key.encode())

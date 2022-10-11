@@ -16,8 +16,11 @@ message RegisterRequest {
 }
 
 message RegisterReply {
-  uint32 id = 1;
-  string message = 2;
+  uint32  id = 1;
+  oneof message {
+    string error_message = 2;
+    uint32 m = 3;
+  }
 }
 
 // classes for the de register functionality
@@ -37,7 +40,7 @@ message PopulateRequest {
 }
 
 message PopulateReply {
-  FingerTableEntry predecessor_id = 1;
+  FingerTableEntry predecessor = 1;
   repeated FingerTableEntry finger_table = 2;
 }
 
