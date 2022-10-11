@@ -18,6 +18,7 @@ message RegisterRequest {
 message RegisterReply {
   uint32  id = 1;
   string message = 2;
+  uint32 chord_size = 3;
 }
 
 // classes for the de register functionality
