@@ -105,8 +105,11 @@ string key = 1;
 
 message FindReply {
 bool result = 1;
-string message = 2; // either id or error message
-optional string node_addr = 3; // this field might not be necessary
+oneof message {
+  uint32 node_id = 2;
+  string error_message = 3;
+}
+string node_addr = 4; // this field might not be necessary
 }
 
 // classes for the quit functionality
