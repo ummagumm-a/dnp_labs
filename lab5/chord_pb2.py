@@ -19,7 +19,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   package='',
   syntax='proto3',
   serialized_options=None,
-  serialized_pb=_b('\n\x0b\x63hord.proto\"\"\n\x0fRegisterRequest\x12\x0f\n\x07\x61\x64\x64ress\x18\x01 \x01(\t\",\n\rRegisterReply\x12\n\n\x02id\x18\x01 \x01(\x03\x12\x0f\n\x07message\x18\x02 \x01(\t\"$\n\x11\x44\x65registerRequest\x12\x0f\n\x07\x61\x64\x64ress\x18\x01 \x01(\x03\"2\n\x0f\x44\x65registerReply\x12\x0e\n\x06result\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t\"\"\n\x0fPopulateRequest\x12\x0f\n\x07node_id\x18\x01 \x01(\x03\"c\n\rPopulateReply\x12)\n\x0epredecessor_id\x18\x01 \x01(\x0b\x32\x11.FingerTableEntry\x12\'\n\x0c\x66inger_table\x18\x02 \x03(\x0b\x32\x11.FingerTableEntry\"4\n\x10\x46ingerTableEntry\x12\x0f\n\x07node_id\x18\x01 \x01(\r\x12\x0f\n\x07\x61\x64\x64ress\x18\x02 \x01(\t\"\r\n\x0bInfoRequest\"_\n\tInfoReply\x12$\n\x05nodes\x18\x01 \x03(\x0b\x32\x15.InfoReply.NodesEntry\x1a,\n\nNodesEntry\x12\x0b\n\x03key\x18\x01 \x01(\x03\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"(\n\x0bSaveRequest\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\x0c\n\x04text\x18\x02 \x01(\t\"R\n\tSaveReply\x12\x0e\n\x06result\x18\x01 \x01(\x08\x12\x11\n\x07node_id\x18\x02 \x01(\rH\x00\x12\x17\n\rerror_message\x18\x03 \x01(\tH\x00\x42\t\n\x07message\"\x1c\n\rRemoveRequest\x12\x0b\n\x03key\x18\x01 \x01(\t\"T\n\x0bRemoveReply\x12\x0e\n\x06result\x18\x01 \x01(\x08\x12\x11\n\x07node_id\x18\x02 \x01(\rH\x00\x12\x17\n\rerror_message\x18\x03 \x01(\tH\x00\x42\t\n\x07message\"\x1a\n\x0b\x46indRequest\x12\x0b\n\x03key\x18\x01 \x01(\t\"?\n\tFindReply\x12\x0e\n\x06result\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t\x12\x11\n\tnode_addr\x18\x03 \x01(\t\"\r\n\x0bQuitRequest\"\x1c\n\tQuitReply\x12\x0f\n\x07message\x18\x01 \x01(\t2\xd3\x01\n\x08Registry\x12,\n\x08register\x12\x10.RegisterRequest\x1a\x0e.RegisterReply\x12\x32\n\nderegister\x12\x12.DeregisterRequest\x1a\x10.DeregisterReply\x12\x39\n\x15populate_finger_table\x12\x10.PopulateRequest\x1a\x0e.PopulateReply\x12*\n\x0eget_chord_info\x12\x0c.InfoRequest\x1a\n.InfoReply2\xce\x01\n\x04Node\x12,\n\x10get_finger_table\x12\x0c.InfoRequest\x1a\n.InfoReply\x12$\n\x08save_key\x12\x0c.SaveRequest\x1a\n.SaveReply\x12*\n\nremove_key\x12\x0e.RemoveRequest\x1a\x0c.RemoveReply\x12$\n\x08\x66ind_key\x12\x0c.FindRequest\x1a\n.FindReply\x12 \n\x04quit\x12\x0c.QuitRequest\x1a\n.QuitReplyb\x06proto3')
+  serialized_pb=_b('\n\x0b\x63hord.proto\"\"\n\x0fRegisterRequest\x12\x0f\n\x07\x61\x64\x64ress\x18\x01 \x01(\t\",\n\rRegisterReply\x12\n\n\x02id\x18\x01 \x01(\r\x12\x0f\n\x07message\x18\x02 \x01(\t\"$\n\x11\x44\x65registerRequest\x12\x0f\n\x07\x61\x64\x64ress\x18\x01 \x01(\r\"2\n\x0f\x44\x65registerReply\x12\x0e\n\x06result\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t\"\"\n\x0fPopulateRequest\x12\x0f\n\x07node_id\x18\x01 \x01(\r\"c\n\rPopulateReply\x12)\n\x0epredecessor_id\x18\x01 \x01(\x0b\x32\x11.FingerTableEntry\x12\'\n\x0c\x66inger_table\x18\x02 \x03(\x0b\x32\x11.FingerTableEntry\"4\n\x10\x46ingerTableEntry\x12\x0f\n\x07node_id\x18\x01 \x01(\r\x12\x0f\n\x07\x61\x64\x64ress\x18\x02 \x01(\t\"\r\n\x0bInfoRequest\"_\n\tInfoReply\x12$\n\x05nodes\x18\x01 \x03(\x0b\x32\x15.InfoReply.NodesEntry\x1a,\n\nNodesEntry\x12\x0b\n\x03key\x18\x01 \x01(\r\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"(\n\x0bSaveRequest\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\x0c\n\x04text\x18\x02 \x01(\t\"R\n\tSaveReply\x12\x0e\n\x06result\x18\x01 \x01(\x08\x12\x11\n\x07node_id\x18\x02 \x01(\rH\x00\x12\x17\n\rerror_message\x18\x03 \x01(\tH\x00\x42\t\n\x07message\"\x1c\n\rRemoveRequest\x12\x0b\n\x03key\x18\x01 \x01(\t\"T\n\x0bRemoveReply\x12\x0e\n\x06result\x18\x01 \x01(\x08\x12\x11\n\x07node_id\x18\x02 \x01(\rH\x00\x12\x17\n\rerror_message\x18\x03 \x01(\tH\x00\x42\t\n\x07message\"\x1a\n\x0b\x46indRequest\x12\x0b\n\x03key\x18\x01 \x01(\t\"e\n\tFindReply\x12\x0e\n\x06result\x18\x01 \x01(\x08\x12\x11\n\x07node_id\x18\x02 \x01(\rH\x00\x12\x17\n\rerror_message\x18\x03 \x01(\tH\x00\x12\x11\n\tnode_addr\x18\x04 \x01(\tB\t\n\x07message\"\r\n\x0bQuitRequest\"\x1c\n\tQuitReply\x12\x0f\n\x07message\x18\x01 \x01(\t2\xd3\x01\n\x08Registry\x12,\n\x08register\x12\x10.RegisterRequest\x1a\x0e.RegisterReply\x12\x32\n\nderegister\x12\x12.DeregisterRequest\x1a\x10.DeregisterReply\x12\x39\n\x15populate_finger_table\x12\x10.PopulateRequest\x1a\x0e.PopulateReply\x12*\n\x0eget_chord_info\x12\x0c.InfoRequest\x1a\n.InfoReply2\xce\x01\n\x04Node\x12,\n\x10get_finger_table\x12\x0c.InfoRequest\x1a\n.InfoReply\x12$\n\x08save_key\x12\x0c.SaveRequest\x1a\n.SaveReply\x12*\n\nremove_key\x12\x0e.RemoveRequest\x1a\x0c.RemoveReply\x12$\n\x08\x66ind_key\x12\x0c.FindRequest\x1a\n.FindReply\x12 \n\x04quit\x12\x0c.QuitRequest\x1a\n.QuitReplyb\x06proto3')
 )
 
 
@@ -65,7 +65,7 @@ _REGISTERREPLY = _descriptor.Descriptor(
   fields=[
     _descriptor.FieldDescriptor(
       name='id', full_name='RegisterReply.id', index=0,
-      number=1, type=3, cpp_type=2, label=1,
+      number=1, type=13, cpp_type=3, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
@@ -103,7 +103,7 @@ _DEREGISTERREQUEST = _descriptor.Descriptor(
   fields=[
     _descriptor.FieldDescriptor(
       name='address', full_name='DeregisterRequest.address', index=0,
-      number=1, type=3, cpp_type=2, label=1,
+      number=1, type=13, cpp_type=3, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
@@ -172,7 +172,7 @@ _POPULATEREQUEST = _descriptor.Descriptor(
   fields=[
     _descriptor.FieldDescriptor(
       name='node_id', full_name='PopulateRequest.node_id', index=0,
-      number=1, type=3, cpp_type=2, label=1,
+      number=1, type=13, cpp_type=3, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
@@ -303,7 +303,7 @@ _INFOREPLY_NODESENTRY = _descriptor.Descriptor(
   fields=[
     _descriptor.FieldDescriptor(
       name='key', full_name='InfoReply.NodesEntry.key', index=0,
-      number=1, type=3, cpp_type=2, label=1,
+      number=1, type=13, cpp_type=3, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
@@ -573,15 +573,22 @@ _FINDREPLY = _descriptor.Descriptor(
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR),
     _descriptor.FieldDescriptor(
-      name='message', full_name='FindReply.message', index=1,
-      number=2, type=9, cpp_type=9, label=1,
+      name='node_id', full_name='FindReply.node_id', index=1,
+      number=2, type=13, cpp_type=3, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='error_message', full_name='FindReply.error_message', index=2,
+      number=3, type=9, cpp_type=9, label=1,
       has_default_value=False, default_value=_b("").decode('utf-8'),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR),
     _descriptor.FieldDescriptor(
-      name='node_addr', full_name='FindReply.node_addr', index=2,
-      number=3, type=9, cpp_type=9, label=1,
+      name='node_addr', full_name='FindReply.node_addr', index=3,
+      number=4, type=9, cpp_type=9, label=1,
       has_default_value=False, default_value=_b("").decode('utf-8'),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
@@ -597,9 +604,12 @@ _FINDREPLY = _descriptor.Descriptor(
   syntax='proto3',
   extension_ranges=[],
   oneofs=[
+    _descriptor.OneofDescriptor(
+      name='message', full_name='FindReply.message',
+      index=0, containing_type=None, fields=[]),
   ],
   serialized_start=760,
-  serialized_end=823,
+  serialized_end=861,
 )
 
 
@@ -622,8 +632,8 @@ _QUITREQUEST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=825,
-  serialized_end=838,
+  serialized_start=863,
+  serialized_end=876,
 )
 
 
@@ -653,8 +663,8 @@ _QUITREPLY = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=840,
-  serialized_end=868,
+  serialized_start=878,
+  serialized_end=906,
 )
 
 _POPULATEREPLY.fields_by_name['predecessor_id'].message_type = _FINGERTABLEENTRY
@@ -673,6 +683,12 @@ _REMOVEREPLY.fields_by_name['node_id'].containing_oneof = _REMOVEREPLY.oneofs_by
 _REMOVEREPLY.oneofs_by_name['message'].fields.append(
   _REMOVEREPLY.fields_by_name['error_message'])
 _REMOVEREPLY.fields_by_name['error_message'].containing_oneof = _REMOVEREPLY.oneofs_by_name['message']
+_FINDREPLY.oneofs_by_name['message'].fields.append(
+  _FINDREPLY.fields_by_name['node_id'])
+_FINDREPLY.fields_by_name['node_id'].containing_oneof = _FINDREPLY.oneofs_by_name['message']
+_FINDREPLY.oneofs_by_name['message'].fields.append(
+  _FINDREPLY.fields_by_name['error_message'])
+_FINDREPLY.fields_by_name['error_message'].containing_oneof = _FINDREPLY.oneofs_by_name['message']
 DESCRIPTOR.message_types_by_name['RegisterRequest'] = _REGISTERREQUEST
 DESCRIPTOR.message_types_by_name['RegisterReply'] = _REGISTERREPLY
 DESCRIPTOR.message_types_by_name['DeregisterRequest'] = _DEREGISTERREQUEST
@@ -828,8 +844,8 @@ _REGISTRY = _descriptor.ServiceDescriptor(
   file=DESCRIPTOR,
   index=0,
   serialized_options=None,
-  serialized_start=871,
-  serialized_end=1082,
+  serialized_start=909,
+  serialized_end=1120,
   methods=[
   _descriptor.MethodDescriptor(
     name='register',
@@ -879,8 +895,8 @@ _NODE = _descriptor.ServiceDescriptor(
   file=DESCRIPTOR,
   index=1,
   serialized_options=None,
-  serialized_start=1085,
-  serialized_end=1291,
+  serialized_start=1123,
+  serialized_end=1329,
   methods=[
   _descriptor.MethodDescriptor(
     name='get_finger_table',
