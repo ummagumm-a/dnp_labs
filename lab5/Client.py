@@ -69,7 +69,8 @@ class ClientConnection:
             save_request = pb2.SaveRequest(key=key, text=text)
             response = self.stub.save_key(save_request)
 
-            return response.message
+            # print(dir(response))
+            return response.node_id
 
         def registry_callback():
             raise Exception("Can't save this data. The client is connected to a registry.")
@@ -88,7 +89,7 @@ class ClientConnection:
             remove_request = pb2.RemoveRequest(key=key)
             response = self.stub.remove_key(remove_request)
 
-            return response.message
+            return response.node_id
 
         def registry_callback():
             raise Exception("Can't remove this key. The client is connected to a registry.")
@@ -104,12 +105,12 @@ class ClientConnection:
         """
         def node_callback():
             find_request = pb2.FindRequest(key=key)
-            result, message, _ = self.stub.find_key(find_request)
+            response = self.stub.find_key(find_request)
 
-            if result:
-                return message
+            if response.result:
+                return response.node
             else:
-                return f"Key wasn't found: {message}"
+                return f"Key wasn't found: {response.error_message}"
 
         def registry_callback():
             raise Exception("Can't find this key. The client is connected to a registry.")
@@ -162,7 +163,6 @@ def cli_loop():
         if inp == 'exit':
             break
         query, args = parse_input(inp)
-        print(args)
         if query is None:
             print("Incorrect Query")
             continue

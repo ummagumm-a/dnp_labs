@@ -7,10 +7,18 @@ import zlib
 from typing import Callable
 import sys
 from concurrent import futures
+from threading import Thread
+from time import sleep
 # set the random seed to ZERO for reproducible results
 SEED = 0
 random.seed(SEED)
 
+def poll_finger_table_updates(obj: Node):
+    while True:
+        response = obj.registry_stub.populate_finger_table(obj.node_id)
+        obj.predecessor = response.predecessor
+        obj.finger_table = response.finger_table
+        sleep(1)
 
 class Node(pb2_grpc.NodeServicer):
     # a node needs:
@@ -18,16 +26,37 @@ class Node(pb2_grpc.NodeServicer):
     # 2. the id of its predecessor
     # 3. finger_table: as described in the assignment
     # 4. a dictionary to save the keys and the corresponding texts
-    def __init__(self, address: str, node_id: id, predecessor_id: int, finger_table: set):
-        self.address = address
+    def __init__(self, node_address: str, registry_address: str):
+        self.node_address = node_address
+        self.registry_address = registry_address
         self.keys_text = {}
-        # all these three fields should be assigned after calling register()
-        # and then populate_finger_table
-        self.node_id = node_id
-        self.predecessor_id = predecessor_id
-        self.finger_table = finger_table
-        # size of the chord
-        self.m = 32
+        self.registry_stub, self.node_id, self.m, self.finger_table, self.predecessor = self.init(address)
+        self.poller_handler = self._poll_finger_table_updates_spawn()
+
+    def initialize(self) -> pb2_grpc.RegistryStub, int, int, list[(int, string)], pb2.FingerTableEntry:
+        """
+        This function initializes all important fields and registers itself in the registry.
+        """
+
+        # Create registry stub
+        channel = grpc.insecure_channel(self.registry_address)
+        registry_stub = pb2_grpc.RegisterStub(channel)
+
+        # Register itself
+        response = pb2.RegisterRequest(address=self.node_address)
+        node_id, m = response.id, response.m
+
+        # Poll finger table and predecessor
+        response = obj.registry_stub.populate_finger_table(node_id)
+        predecessor = response.predecessor
+        finger_table = response.finger_table
+
+        return registry_stub, node_id, m, finger_table, predecessor
+
+    def _poll_finger_table_updates_spawn(self):
+        handler = Thread.spawn(target=poll_finger_table_updates, args=(self,))
+        handler.start()
+        return handler
 
     def get_finger_table(self, request, context):
         # the request is created with no fields, so it will be ignored
@@ -49,16 +78,13 @@ class Node(pb2_grpc.NodeServicer):
 
         key = request.key
         target_id = self.encode_key(key)
-        print('here')
 
-        succ = get_succ(self.node_id, finger_table.keys())
-        print('aa')
+        # succ = get_succ(self.node_id, finger_table.keys())
+        succ = finger_table[0].node_id
         if ring_between(self.predecessor_id, target_id, self.node_id):
-            print(1)
             return this_node_callback(request)
 
         elif ring_between(self.node_id, key, succ):
-            print(2)
             succ_address = self.finger_table[succ]
             channel = grpc.insecure_channel(succ_address)
             stub = pb2_grpc.NodeStub(channel)
@@ -66,8 +92,8 @@ class Node(pb2_grpc.NodeServicer):
             return eval(f"stub.{operation}")(request)
         
         else:
-            print(3)
-            target_node = get_pred(target_id, finger_table.keys())
+            finger_table_node_ids = list(map(lambda x: x[0], finger_table))
+            target_node = get_pred(target_id, finger_table_node_ids)
             target_node_address = self.finger_table[target_node]
             channel = grpc.insecure_channel(target_node_address)
             stub = pb2_grpc.NodeStub(channel)
@@ -89,8 +115,7 @@ class Node(pb2_grpc.NodeServicer):
             else:
                 self.keys_text[key] = text
                     
-                # TODO: actually, message should be an int. Talk to Ayhem about comments in *_pb2.py and recompile .proto.
-                return pb2.SaveReply(result=True, message=str(self.node_id))
+                return pb2.SaveReply(result=True, node_id=self.node_id)
 
         return self._lookup_and_execute(request, this_node_callback, "save_key")
 
@@ -101,10 +126,9 @@ class Node(pb2_grpc.NodeServicer):
             if key in self.keys_text.keys():
                 del self.keys_text[key]
 
-                # TODO: actually, message should be an int. Talk to Ayhem about comments in *_pb2.py and recompile .proto.
-                return pb2.RemoveReply(result=True, message=(str(self.node_id)))
+                return pb2.RemoveReply(result=True, node_id=self.node_id)
             else:
-                return pb2.RemoveReply(result=False, message="No such key")
+                return pb2.RemoveReply(result=False, error_message="No such key")
 
         return self._lookup_and_execute(request, this_node_callback, "remove_key")
 
@@ -113,9 +137,10 @@ class Node(pb2_grpc.NodeServicer):
             key = request.key
 
             if key in self.keys_text.keys():
-                return True, self.node_id, self.address
+
+                return pb2.FindReply(result=True, node=pb2.FingerTableEntry(node_id=self.node_id, address=self.address))
                 
-            return True, "No such key"
+            return pb2.FindReply(result=True, error_message="No such key")
 
         return self._lookup_and_execute(request, this_node_callback, "find_key")
 
@@ -126,13 +151,10 @@ class Node(pb2_grpc.NodeServicer):
 if __name__ == '__main__':
     registry_address = sys.argv[1]
     node_address = sys.argv[2]
-    # TODO: only for testing. Should request this from the registry.
-    node_id = int(sys.argv[3])
-    predecessor_id = int(sys.argv[4])
-    finger_table = { 5: node_address }
 
     # create node object
-    node = Node(node_address, node_id, predecessor_id, finger_table)
+    node = Node(node_address, registry_address)
+    node.initialize()
 
     # setup and run server
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))

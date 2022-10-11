@@ -16,7 +16,7 @@ message RegisterRequest {
 }
 
 message RegisterReply {
-  uint32  id = 1;
+  uint32 id = 1;
   string message = 2;
 }
 
@@ -99,22 +99,21 @@ message RemoveReply {
 // classes for the find functionality
 
 message FindRequest {
-string key = 1;
+  string key = 1;
 }
 
 
 message FindReply {
-bool result = 1;
-oneof message {
-  uint32 node_id = 2;
-  string error_message = 3;
-}
-string node_addr = 4; // this field might not be necessary
+  bool result = 1;
+  oneof message {
+    FingerTableEntry node = 2;
+    string error_message = 3;
+  }
 }
 
 // classes for the quit functionality
 message QuitRequest {}
 
 message QuitReply {
-string message = 1;
+  string message = 1;
 }
