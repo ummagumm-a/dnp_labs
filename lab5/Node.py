@@ -13,9 +13,13 @@ from time import sleep
 SEED = 0
 random.seed(SEED)
 
+class Node(pb2_grpc.NodeServicer):
+    pass
+
 def poll_finger_table_updates(obj: Node):
     while True:
-        response = obj.registry_stub.populate_finger_table(obj.node_id)
+        request = pb2.PopulateRequest(node_id=obj.node_id)
+        response = obj.registry_stub.populate_finger_table(request)
         obj.predecessor = response.predecessor
         obj.finger_table = response.finger_table
         sleep(1)
@@ -30,31 +34,32 @@ class Node(pb2_grpc.NodeServicer):
         self.node_address = node_address
         self.registry_address = registry_address
         self.keys_text = {}
-        self.registry_stub, self.node_id, self.m, self.finger_table, self.predecessor = self.init(address)
+        self.registry_stub, self.node_id, self.m, self.finger_table, self.predecessor = self._initialize()
         self.poller_handler = self._poll_finger_table_updates_spawn()
 
-    def initialize(self) -> pb2_grpc.RegistryStub, int, int, list[(int, string)], pb2.FingerTableEntry:
+    def _initialize(self) -> (pb2_grpc.RegistryStub, int, int, list[(int, str)], pb2.FingerTableEntry):
         """
         This function initializes all important fields and registers itself in the registry.
         """
 
         # Create registry stub
         channel = grpc.insecure_channel(self.registry_address)
-        registry_stub = pb2_grpc.RegisterStub(channel)
+        registry_stub = pb2_grpc.RegistryStub(channel)
 
         # Register itself
-        response = pb2.RegisterRequest(address=self.node_address)
+        response = registry_stub.register(pb2.RegisterRequest(address=self.node_address))
         node_id, m = response.id, response.m
 
         # Poll finger table and predecessor
-        response = obj.registry_stub.populate_finger_table(node_id)
+        request = pb2.PopulateRequest(node_id=node_id)
+        response = registry_stub.populate_finger_table(request)
         predecessor = response.predecessor
         finger_table = response.finger_table
 
         return registry_stub, node_id, m, finger_table, predecessor
 
     def _poll_finger_table_updates_spawn(self):
-        handler = Thread.spawn(target=poll_finger_table_updates, args=(self,))
+        handler = Thread(target=poll_finger_table_updates, args=(self,))
         handler.start()
         return handler
 
@@ -154,7 +159,6 @@ if __name__ == '__main__':
 
     # create node object
     node = Node(node_address, registry_address)
-    node.initialize()
 
     # setup and run server
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))

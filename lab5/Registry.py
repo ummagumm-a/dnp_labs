@@ -62,7 +62,7 @@ class Registry(pb2_grpc.RegistryServicer):
             return -1
 
     def register(self, request, context):
-        node_addr = request.addr
+        node_addr = request.address
         new_id = self.__generate_id(node_addr)
 
         if new_id < 0:
