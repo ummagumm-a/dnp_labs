@@ -16,13 +16,13 @@ message RegisterRequest {
 }
 
 message RegisterReply {
-  int64  id = 1;
+  uint32  id = 1;
   string message = 2;
 }
 
 // classes for the de register functionality
 message DeregisterRequest {
-  int64 address = 1;
+  uint32 address = 1;
 }
 
 message DeregisterReply {
@@ -33,12 +33,17 @@ message DeregisterReply {
 // classes for for populate finger table functionality
 
 message PopulateRequest {
-  int64 node_id = 1;
+  uint32 node_id = 1;
 }
 
 message PopulateReply {
-  int64 predecessor_id = 1;
-  map<int64, string> finger_table = 2;
+  FingerTableEntry predecessor_id = 1;
+  repeated FingerTableEntry finger_table = 2;
+}
+
+message FingerTableEntry {
+  uint32 node_id = 1;
+  string address = 2;
 }
 
 // classes for the get_info_chord functionality
@@ -47,7 +52,7 @@ message PopulateReply {
 message InfoRequest {}
 
 message InfoReply {
-  map<int64, string> nodes = 1;
+  map<uint32, string> nodes = 1;
 }
 
 

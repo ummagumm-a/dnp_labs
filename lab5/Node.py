@@ -27,7 +27,8 @@ class Node(pb2_grpc.NodeServicer):
         self.predecessor_id = predecessor_id
         self.finger_table = finger_table
         # size of the chord
-        self.m = 32
+        # TODO: add it as an argument
+        self.m = 32 # this field should be assigned as well from the register call, as only the register knows "m"
 
     def get_finger_table(self, request, context):
         # the request is created with no fields, so it will be ignored
@@ -72,7 +73,7 @@ class Node(pb2_grpc.NodeServicer):
             channel = grpc.insecure_channel(target_node_address)
             stub = pb2_grpc.NodeStub(channel)
             
-            return eval(f"stub.{operation}")(req)
+            return eval(f"stub.{operation}")(request)
         
     def encode_key(self, key):
         hash_value = zlib.adler32(key.encode())

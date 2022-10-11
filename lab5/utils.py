@@ -29,7 +29,6 @@ def ring_between(left, num, right):
     """
     Calculate whether 'num' is in between 'left' and 'right' on a number ring.
     """
-
     if left < right:
         return left < num < right
     elif left > right:
