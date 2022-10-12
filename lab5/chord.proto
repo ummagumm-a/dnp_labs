@@ -70,6 +70,8 @@ service Node {
   rpc remove_key(RemoveRequest) returns (RemoveReply);
   rpc find_key(FindRequest) returns (FindReply);
   rpc quit(QuitRequest) returns (QuitReply);
+  rpc notify_predecessor(NotificationRequest) returns (NotificationReply);
+  rpc notify_successor(NotificationRequest) returns (NotificationReply)
 }
 
 // classes for the save functionality
@@ -120,3 +122,11 @@ message QuitRequest {}
 message QuitReply {
   string message = 1;
 }
+
+
+message NotificationRequest {
+  uint32 sender_id = 1; // the id of the node sending the notification: mainly the node leaving the chord
+  uint32 new_id = 2; // either the id of the leaving node's predecessor or successor depending on the recipient node
+}
+
+message NotificationReply {}
