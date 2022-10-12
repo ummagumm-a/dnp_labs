@@ -13,18 +13,10 @@ from time import sleep
 SEED = 0
 random.seed(SEED)
 
-class Node(pb2_grpc.NodeServicer):
-    pass
-
-def poll_finger_table_updates(obj: Node):
-    while True:
-        request = pb2.PopulateRequest(node_id=obj.node_id)
-        response = obj.registry_stub.populate_finger_table(request)
-        obj.predecessor = response.predecessor
-        obj.finger_table = response.finger_table
-        sleep(1)
 
 class Node(pb2_grpc.NodeServicer):
+    """
+    """
     # a node needs:
     # 1. an address: ipaddr:port
     # 2. the id of its predecessor
@@ -34,10 +26,12 @@ class Node(pb2_grpc.NodeServicer):
         self.node_address = node_address
         self.registry_address = registry_address
         self.keys_text = {}
-        self.registry_stub, self.node_id, self.m, self.finger_table, self.predecessor = self._initialize()
+        self.registry_stub, self.node_id, self.m, \
+                            self.finger_table, self.predecessor = self._initialize_variables()
         self.poller_handler = self._poll_finger_table_updates_spawn()
+        self._notify_neighbors()
 
-    def _initialize(self) -> (pb2_grpc.RegistryStub, int, int, list[(int, str)], pb2.FingerTableEntry):
+    def _initialize_variables(self) -> (pb2_grpc.RegistryStub, int, int, list[(int, str)], pb2.FingerTableEntry):
         """
         This function initializes all important fields and registers itself in the registry.
         """
@@ -63,6 +57,9 @@ class Node(pb2_grpc.NodeServicer):
         handler.start()
         return handler
 
+    def _notify_neighbors(self):
+        pass
+
     def get_finger_table(self, request, context):
         # the request is created with no fields, so it will be ignored
         # this function will return a copy of the current finger_table saved inside the Node
@@ -85,8 +82,8 @@ class Node(pb2_grpc.NodeServicer):
         target_id = self.encode_key(key)
 
         # succ = get_succ(self.node_id, finger_table.keys())
-        succ = finger_table[0].node_id
-        if ring_between(self.predecessor_id, target_id, self.node_id):
+        succ = self.finger_table[0].node_id
+        if ring_between(self.predecessor.node_id, target_id, self.node_id):
             return this_node_callback(request)
 
         elif ring_between(self.node_id, key, succ):
@@ -97,9 +94,9 @@ class Node(pb2_grpc.NodeServicer):
             return eval(f"stub.{operation}")(request)
         
         else:
-            finger_table_node_ids = list(map(lambda x: x[0], finger_table))
-            target_node = get_pred(target_id, finger_table_node_ids)
-            target_node_address = self.finger_table[target_node]
+            finger_table_node_ids = list(map(lambda x: x[0], self.finger_table))
+            target_node_index = get_pred(target_id, finger_table_node_ids)
+            target_node_address = self.finger_table[target_node_index]
             channel = grpc.insecure_channel(target_node_address)
             stub = pb2_grpc.NodeStub(channel)
             
@@ -152,6 +149,16 @@ class Node(pb2_grpc.NodeServicer):
     def quit(self, request, context):
         # TODO: implement
         pass
+
+
+def poll_finger_table_updates(obj: Node):
+    while True:
+        request = pb2.PopulateRequest(node_id=obj.node_id)
+        response = obj.registry_stub.populate_finger_table(request)
+        obj.predecessor = response.predecessor
+        obj.finger_table = response.finger_table
+        sleep(1)
+
 
 if __name__ == '__main__':
     registry_address = sys.argv[1]
