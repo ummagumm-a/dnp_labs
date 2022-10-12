@@ -97,8 +97,8 @@ class Node(pb2_grpc.NodeServicer):
         target_id = self.encode_key(key)
 
         # succ = get_succ(self.node_id, finger_table.keys())
-        succ = finger_table[0].node_id
-        if ring_between(self.predecessor_id, target_id, self.node_id):
+        succ = self.finger_table[0].node_id
+        if ring_between(self.predecessor.node_id, target_id, self.node_id):
             return this_node_callback(request)
 
         elif ring_between(self.node_id, key, succ):
@@ -109,7 +109,7 @@ class Node(pb2_grpc.NodeServicer):
             return eval(f"stub.{operation}")(request)
 
         else:
-            finger_table_node_ids = list(map(lambda x: x[0], finger_table))
+            finger_table_node_ids = list(map(lambda x: x[0], self.finger_table))
             target_node = get_pred(target_id, finger_table_node_ids)
             target_node_address = self.finger_table[target_node]
             channel = grpc.insecure_channel(target_node_address)
