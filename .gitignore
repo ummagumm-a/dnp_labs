@@ -7,3 +7,4 @@ playground.ipynb
 .idea/
 lab5/chord_pb2_grpc.py
 lab5/chord_pb2.py
+venv
