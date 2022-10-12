@@ -1,6 +1,6 @@
 def mod(a: int, b: int) -> int:
     return (a % b + b) % b
-    
+
 def get_succ(id, other_ids):
     """
     Find successor of 'id' in ring 'other_ids'.
@@ -16,14 +16,16 @@ def get_succ(id, other_ids):
 def get_pred(id, other_ids):
     """
     Find predecessor of 'id' in ring 'other_ids'.
+
+    :returns: index of predecessor in 'other_ids'.
     """
 
     lt_id = [other_id for other_id in other_ids if other_id < id]
 
     if len(lt_id) != 0:
-        return max(lt_id)
+        return other_ids.index(max(lt_id))
     else:
-        return max(other_ids)
+        return other_ids.index(max(other_ids))
 
 def ring_between(left, num, right):
     """
