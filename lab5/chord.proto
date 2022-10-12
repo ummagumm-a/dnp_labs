@@ -70,8 +70,9 @@ service Node {
   rpc remove_key(RemoveRequest) returns (RemoveReply);
   rpc find_key(FindRequest) returns (FindReply);
   rpc quit(QuitRequest) returns (QuitReply);
-  rpc notify_predecessor(NotificationRequest) returns (NotificationReply);
-  rpc notify_successor(NotificationRequest) returns (NotificationReply)
+  rpc predecessor_notification(NotificationRequest) returns (NotificationReply);
+  rpc successor_notification(NotificationRequest) returns (NotificationReply);
+  rpc distributeKeys(DistributeRequest) returns (DistributeReply);
 }
 
 // classes for the save functionality
@@ -125,8 +126,18 @@ message QuitReply {
 
 
 message NotificationRequest {
-  uint32 sender_id = 1; // the id of the node sending the notification: mainly the node leaving the chord
-  uint32 new_id = 2; // either the id of the leaving node's predecessor or successor depending on the recipient node
+  FingerTableEntry new_neighbor = 1; // this value represents the pair of id and address of the new value in the Node.
+  // depending on the situation, it is either the new successor, or the new predecessor.
 }
 
-message NotificationReply {}
+message NotificationReply {
+  bool set = 1;
+}
+
+message DistributeRequest {
+  FingerTableEntry new_node=1;
+}
+
+message DistributeReply {
+  repeated SaveRequest moved_keys=1;
+}
