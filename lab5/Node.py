@@ -15,7 +15,7 @@ from utils import get_pred, ring_between
 # set the random seed to ZERO for reproducible results
 SEED = 0
 random.seed(SEED)
-
+SLEEP_TIME = 1
 
 class Node(pb2_grpc.NodeServicer):
     pass
@@ -33,7 +33,7 @@ def poll_finger_table_updates(obj: Node):
         print(f"predecessor: {str(obj.predecessor.node_id)}")
         for i in range(len(obj.finger_table)):
             print(f"{str(i)}: node id:{str(obj.finger_table[i].node_id)}, address: {str(obj.finger_table[i].address)}")
-        sleep(5)
+        sleep(SLEEP_TIME)
 
 
 class Node(pb2_grpc.NodeServicer):
@@ -222,59 +222,64 @@ class Node(pb2_grpc.NodeServicer):
         """
         This method is created to remove a node from the chord correctly. This is implemented through the following
         steps:
-        1. set the predecessor of the successor node
-        2. save all the current keys in the successor
-        3. set the successor of the predecessor node
+        1. set the predecessor of the successor node to the predecessor of the current node
+        2. set the successor of the predecessor node to the successor of the current node
+        3. save all the current keys in the successor
         4. ask the register to deregister the node
         :param request: request from user: does not contain any information:
         :param context:
         :return: nothing
         """
         # step 1
-
         successor_address = self.finger_table[0].address  # , can be replaced with self.finger_table[0][1]
-        # if successor_address != self.node_address:
-        #     # print("THIS NODE IS THE ONLY NODE IN THE CHORD: CAN'T GET RID OF IT.")
-        #     # set the channel of communication
-        #     channel_successor = grpc.insecure_channel(successor_address)
-        #     # create the client
-        #     stub_successor = pb2_grpc.NodeStub(channel_successor)
-        #     # notify the successor
-        #     notification = pb2.NotificationRequest(new_neighbor=self.predecessor)
-        #     # receive notification
-        #     notification_reply = stub_successor.successor_notification(notification)
-        #
-        #     if not notification_reply.set:
-        #         print("THE SUCCESSOR COULD NOT SET ITS PREDECESSOR SUCCESSFULLY. ABORTING!!")
-        #         return
-        #
-        #     # step 2
-        #     channel_predecessor = grpc.insecure_channel(self.predecessor.address)
-        #     stub_predecessor = pb2_grpc.NodeStub(channel_predecessor)
-        #     notification = pb2.NotificationRequest(new_neighbor=self.finger_table[0])
-        #     notification_reply = stub_predecessor.predecessor_notification(notification)
-        #
-        #     if not notification_reply.set:
-        #         print("THE PREDECESSOR COULD NOT SET ITS SUCCESSOR SUCCESSFULLY. ABORTING!!")
-        #         return
-        #
-        # # step 3 pass all the current keys to the successor
-        #     for key, text in self.keys_text.copy():
-        #         save_reply = stub_successor.save_key(key)
-        #         if not save_reply.result:
-        #             print(f"THE SUCCESSOR COULD NOT SAVE THE PIECE OF {text} associated with key {key}. ABORTING!!")
-        #         # remove the pair <key, text> locally
-        #         self.keys_text.pop(key)
+
+        if successor_address != self.node_address:
+            # print("THIS NODE IS THE ONLY NODE IN THE CHORD: CAN'T GET RID OF IT.")
+            # set the channel of communication
+            channel_successor = grpc.insecure_channel(successor_address)
+            # create the client
+            stub_successor = pb2_grpc.NodeStub(channel_successor)
+            # notify the successor
+            notification = pb2.NotificationRequest(new_neighbor=self.predecessor)
+            # receive notification
+            notification_reply = stub_successor.successor_notification(notification)
+
+            if not notification_reply.result:
+                print("THE SUCCESSOR COULD NOT SET ITS PREDECESSOR SUCCESSFULLY. ABORTING!!")
+                return
+
+            # step 2
+            channel_predecessor = grpc.insecure_channel(self.predecessor.address)
+            stub_predecessor = pb2_grpc.NodeStub(channel_predecessor)
+            notification = pb2.NotificationRequest(new_neighbor=self.finger_table[0])
+            notification_reply = stub_predecessor.predecessor_notification(notification)
+
+            if not notification_reply.result:
+                print("THE PREDECESSOR COULD NOT SET ITS SUCCESSOR SUCCESSFULLY. ABORTING!!")
+                return
+
+        # step 3 pass all the current keys to the successor
+            print([(key, text, self.encode_key(key) for key, text in self.keys_text)])
+            for key, text in self.keys_text.copy():
+                # ask successor to save the key
+                stub_successor.save_key(pb2.SaveRequest(key=key, text=text))
+
+                # if not save_reply.result:
+                #     print(f"THE SUCCESSOR COULD NOT SAVE THE PIECE OF {text} associated with key {key}. ABORTING!!")
+
+                # remove the pair <key, text> locally
+                self.keys_text.pop(key)
+
+            # print if it is empty
+            print(not self.keys_text)
 
         # step 4: contacting the registry to deregister the node
         # we use the registryStud created in the initialization phase
         deregister_req = pb2.DeregisterRequest(node_id=self.node_id)
         deregister_reply = self.registry_stub.deregister(deregister_req)
 
-        if not deregister_reply.result:
-            print("THE REGISTRY COULD NOT REMOVE THE NODE. ABORTING!!")
-        else:
-            print(deregister_reply.message)
+        # print the message from registry!!!
+        print(deregister_reply.message)
 
     # this function is executed by a successor node. The successor Node will play the role of a server
     # while the newly-added node will play the role of a client. For this reason, a new function is needed
@@ -293,22 +298,35 @@ class Node(pb2_grpc.NodeServicer):
         # extract the id of the new node
         new_node_id = request.new_node.node_id
         # filter the keys that should be stored in the new node: found based on the mathematical expression below
-        distributed_keys = [pb2.SaveReply(key=key, text=value) for key, value in self.keys_text
+        distributed_keys = [pb2.SaveRequest(key=key, text=value) for key, value in self.keys_text
                             if new_node_id >= self.encode_key(key) > self.predecessor.node_id]
+        # print keys before deleting keys
+        print([(key, text, self.encode_key(key) for key, text in self.keys_text)])
+
+        # delete the keys that should be transferred
+        for save_request in distributed_keys:
+            self.keys_text.pop(save_request.key)
+
+        # print keys after deleting keys
+        print([(key, text, self.encode_key(key) for key, text in self.keys_text)])
+
         # send the result
         return pb2.DistributeReply(moved_keys=distributed_keys)
 
     # this function represents the client code that will code distributeKeys
     def get_keys_successor(self):
+        # get the successor address
         successor_address = self.finger_table[0].address
         # ignore this step if this node is the only node present in the chord
         if successor_address == self.node_address:
             return
-
+        # connect to the successor
         channel = grpc.insecure_channel(successor_address)
         stub = pb2_grpc.NodeStub(channel)
+        # create a request to send
         keysRequest = pb2.DistributeRequest(new_node=
                                             pb2.FingerTableEntry(node_id=self.node_id, address=self.node_address))
+        # receive the keys that should be deleted
         keysReply = stub.distributeKeys(keysRequest)
         # the received object is a KeysRequest object with one field moved_keys which is an array of SaveRequest objects
         # each containing key and text fields

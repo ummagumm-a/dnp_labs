@@ -38,25 +38,20 @@ class Registry(pb2_grpc.RegistryServicer):
         self.address = address
         self.m = m
         self.max_size = 2 ** m
-        self.current = 0
+        # dictionary of id and address port pairs for all registered nodes
         self.nodes_map = {}
 
-    def __generate_id(self, node_addr: str) -> int:
+    def __generate_id(self) -> int:
         """
         given the node's address, this function will verify whether there is space for a new node:
         1. if such space exists, this function returns the new-generated id
         2. if the chord is full return -1
-        :param node_addr: the node's address
         :return: -1 or new id
         """
-        if self.current < self.max_size:
+        if len(self.nodes_map) < self.max_size:
             while True:
                 n_id = random.randint(0, self.max_size - 1)
                 if n_id not in self.nodes_map:
-                    # increase the number of current nodes
-                    self.current += 1
-                    # save the node in the map
-                    self.nodes_map[n_id] = node_addr
                     # return the node's info
                     return n_id
         else:
@@ -64,10 +59,12 @@ class Registry(pb2_grpc.RegistryServicer):
 
     def register(self, request, context):
         node_addr = request.address
-        new_id = self.__generate_id(node_addr)
+        new_id = self.__generate_id()
 
         if new_id < 0:
             return pb2.RegisterReply(id=new_id, error_message=self.__full_msg)
+        # save the node in the map
+        self.nodes_map[new_id] = node_addr
         return pb2.RegisterReply(id=new_id, m=self.m)
 
     def deregister(self, request, context):
@@ -78,7 +75,7 @@ class Registry(pb2_grpc.RegistryServicer):
             self.nodes_map.pop(node_id)
         else:
             result_tuple = (False, self.__no_id_msg)
-        return pb2.DeregisterReply(**{"result": result_tuple[0], "message": result_tuple[1]})
+        return pb2.DeregisterRequest(result=result_tuple[0], message=result_tuple[1])
 
     def __get_sorted_node_ids(self):
         node_ids = list(self.nodes_map.keys())
