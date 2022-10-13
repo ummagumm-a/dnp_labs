@@ -5,6 +5,10 @@ lab1/good_*
 playground.ipynb
 *.zip
 .idea/
+<<<<<<< HEAD
 lab5/chord_pb2_grpc.py
 lab5/chord_pb2.py
 venv
+=======
+.vscode
+>>>>>>> 28e97891a3bf0d50d3cc24319fa15aea466a9959
