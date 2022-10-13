@@ -33,13 +33,25 @@ class ClientConnection:
         TODO: Should distinguish between node and registry. Now connects only to nodes.
         """
 
+        # try:
+        #     channel = grpc.insecure_channel(f'{ipaddr}:{port}')
+        #     self.stub = pb2_grpc.NodeStub(channel)
+
+        #     return "Connected sucessfully"
+        # except:
+        #     raise Exception(f"Couldn't create a connection to {ipaddr}:{port}.")
+        # TODO: these exceptions will not work because the code doesn't throw an error when creating NodeStub with Registry's IP:PORT
+        channel = grpc.insecure_channel(f'{ipaddr}:{port}')
         try:
-            channel = grpc.insecure_channel(f'{ipaddr}:{port}')
+            # set the reverse service
             self.stub = pb2_grpc.NodeStub(channel)
 
             return "Connected sucessfully"
-        except:
-            raise Exception(f"Couldn't create a connection to {ipaddr}:{port}.")
+        except Exception:
+            try:
+                self.stub = pb2_grpc.RegistryStub(channel)
+            except:
+                raise Exception(f"Couldn't create a connection to {ipaddr}:{port}.")
 
     def get_info(self):
         """
@@ -49,10 +61,10 @@ class ClientConnection:
         Both in string representation. This function is only used for visualization purposes.
         """
         def node_callback():
-            return str(self.stub.get_finger_table())
+            return str(self.stub.get_finger_table(pb2.InfoRequest()))
 
         def registry_callback():
-            return str(self.stub.get_chord_info())
+            return str(self.stub.get_chord_info(pb2.InfoRequest()))
         
         return self._stub_type_check_and_execute(node_callback, registry_callback)
 
@@ -69,8 +81,7 @@ class ClientConnection:
             save_request = pb2.SaveRequest(key=key, text=text)
             response = self.stub.save_key(save_request)
 
-            # print(dir(response))
-            return response.node_id
+            return response.node_id if response.result else response.error_message
 
         def registry_callback():
             raise Exception("Can't save this data. The client is connected to a registry.")
@@ -89,7 +100,7 @@ class ClientConnection:
             remove_request = pb2.RemoveRequest(key=key)
             response = self.stub.remove_key(remove_request)
 
-            return response.node_id
+            return response.node_id if response.result else response.error_message
 
         def registry_callback():
             raise Exception("Can't remove this key. The client is connected to a registry.")
@@ -107,10 +118,7 @@ class ClientConnection:
             find_request = pb2.FindRequest(key=key)
             response = self.stub.find_key(find_request)
 
-            if response.result:
-                return response.node
-            else:
-                return f"Key wasn't found: {response.error_message}"
+            return response.node if response.result else response.error_message
 
         def registry_callback():
             raise Exception("Can't find this key. The client is connected to a registry.")
@@ -170,46 +178,7 @@ def cli_loop():
         print(res)
 
 
-def temp_main():
-    while True:
-        inp = input("> Please enter your command\n")
-        inp = inp.lower().strip()
-        if inp == 'exit':
-            break
-        stub = None
-        node = False
-        registry = False
-        if inp.startswith("connect"):
-            channel = None
-            try:
-                connect, address = re.split(r'\s', inp)
-                print(connect, address, sep="#####")
-                channel = grpc.insecure_channel(address)
-                # set the reverse service
-                stub = pb2_grpc.NodeStub(channel)
-                node = True
-                registry = False
-            except:
-                print("THE ADDRESS DOES NOT CORRESPOND TO A NODE")
-                try:
-                    stub = pb2_grpc.RegistryStub(channel)
-                    registry = True
-                    node = False
-                except:
-                    print("INVALID ADDRESS")
-
-        if inp.startswith("get_info"):
-            try:
-                if node:
-                    dic = stub.get_finger_table()
-                    print(dic)
-                if registry:
-                    dic = stub.get_chord_info()
-                    print(dic)
-            except :
-                print("SOMETHING WENT WRONG!!")
-
-
 if __name__ == '__main__':
-    temp_main()
+    cli_loop()
+    # temp_main()
 

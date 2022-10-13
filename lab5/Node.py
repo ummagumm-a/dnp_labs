@@ -86,7 +86,7 @@ class Node(pb2_grpc.NodeServicer):
     def get_finger_table(self, request, context):
         # the request is created with no fields, so it will be ignored
         # this function will return a copy of the current finger_table saved inside the Node
-        return pb2.InfoReply(nodes=self.finger_table.copy())
+        return pb2.InfoReply(nodes=self.finger_table)
 
     def _lookup_and_execute(self, request, this_node_callback: Callable, operation: str):
         """
@@ -103,23 +103,29 @@ class Node(pb2_grpc.NodeServicer):
 
         key = request.key
         target_id = self.encode_key(key)
+        print(type(target_id), target_id)
 
         # succ = get_succ(self.node_id, finger_table.keys())
         succ = self.finger_table[0].node_id
-        if ring_between(self.predecessor.node_id, target_id, self.node_id):
+        print(type(succ), succ)
+        if ring_between(self.predecessor.node_id, target_id, self.node_id + 1):
+            print(1)
             return this_node_callback(request)
 
-        elif ring_between(self.node_id, key, succ):
-            succ_address = self.finger_table[succ]
+        elif ring_between(self.node_id, target_id, succ + 1):
+            print(2)
+            finger_table_node_ids = list(map(lambda x: x.node_id, self.finger_table))
+            succ_address = self.finger_table[finger_table_node_ids.index(succ)].address
             channel = grpc.insecure_channel(succ_address)
             stub = pb2_grpc.NodeStub(channel)
 
             return eval(f"stub.{operation}")(request)
 
         else:
-            finger_table_node_ids = list(map(lambda x: x[0], self.finger_table))
+            print(3)
+            finger_table_node_ids = list(map(lambda x: x.node_id, self.finger_table))
             target_node = get_pred(target_id, finger_table_node_ids)
-            target_node_address = self.finger_table[target_node]
+            target_node_address = self.finger_table[target_node].address
             channel = grpc.insecure_channel(target_node_address)
             stub = pb2_grpc.NodeStub(channel)
 
@@ -132,24 +138,32 @@ class Node(pb2_grpc.NodeServicer):
         return target_id
 
     def save_key(self, request, context):
+        print('save')
         def this_node_callback(request: pb2.SaveRequest):
             key, text = request.key, request.text
 
             if key in self.keys_text.keys():
+
+                print(self.keys_text)
                 return pb2.SaveReply(result=False, error_message="Key already exists.")
             else:
                 self.keys_text[key] = text
+
+                print(self.keys_text)
 
                 return pb2.SaveReply(result=True, node_id=self.node_id)
 
         return self._lookup_and_execute(request, this_node_callback, "save_key")
 
     def remove_key(self, request, context):
+        print('remove')
         def this_node_callback(request):
             key = request.key
 
             if key in self.keys_text.keys():
                 del self.keys_text[key]
+
+                print(self.keys_text)
 
                 return pb2.RemoveReply(result=True, node_id=self.node_id)
             else:
@@ -158,13 +172,16 @@ class Node(pb2_grpc.NodeServicer):
         return self._lookup_and_execute(request, this_node_callback, "remove_key")
 
     def find_key(self, request, context):
+        print('find')
         def this_node_callback(request):
             key = request.key
 
             if key in self.keys_text.keys():
-                return pb2.FindReply(result=True, node=pb2.FingerTableEntry(node_id=self.node_id, address=self.address))
 
-            return pb2.FindReply(result=True, error_message="No such key")
+                print(self.keys_text)
+                return pb2.FindReply(result=True, node=pb2.FingerTableEntry(node_id=self.node_id, address=self.node_address))
+
+            return pb2.FindReply(result=False, error_message="No such key")
 
         return self._lookup_and_execute(request, this_node_callback, "find_key")
 

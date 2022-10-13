@@ -55,7 +55,7 @@ message FingerTableEntry {
 message InfoRequest {}
 
 message InfoReply {
-  map<uint32, string> nodes = 1;
+  repeated FingerTableEntry nodes = 1;
 }
 
 
