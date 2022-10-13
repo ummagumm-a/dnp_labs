@@ -169,6 +169,47 @@ def cli_loop():
         res = eval(f'client_connection.{query}')(*args)
         print(res)
 
+
+def temp_main():
+    while True:
+        inp = input("> Please enter your command\n")
+        inp = inp.lower().strip()
+        if inp == 'exit':
+            break
+        stub = None
+        node = False
+        registry = False
+        if inp.startswith("connect"):
+            channel = None
+            try:
+                connect, address = re.split(r'\s', inp)
+                print(connect, address, sep="#####")
+                channel = grpc.insecure_channel(address)
+                # set the reverse service
+                stub = pb2_grpc.NodeStub(channel)
+                node = True
+                registry = False
+            except:
+                print("THE ADDRESS DOES NOT CORRESPOND TO A NODE")
+                try:
+                    stub = pb2_grpc.RegistryStub(channel)
+                    registry = True
+                    node = False
+                except:
+                    print("INVALID ADDRESS")
+
+        if inp.startswith("get_info"):
+            try:
+                if node:
+                    dic = stub.get_finger_table()
+                    print(dic)
+                if registry:
+                    dic = stub.get_chord_info()
+                    print(dic)
+            except :
+                print("SOMETHING WENT WRONG!!")
+
+
 if __name__ == '__main__':
-    cli_loop()
+    temp_main()
 

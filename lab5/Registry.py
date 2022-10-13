@@ -15,6 +15,7 @@ from utils import mod
 SEED = 0
 random.seed(SEED)
 
+DEFAULT_ADDRESS = "127.0.0.1:5000"
 DEFAULT_PORT = 5555
 DEFAULT_M = 5
 
@@ -28,13 +29,13 @@ class Registry(pb2_grpc.RegistryServicer):
     __no_id_msg = "There is no such id in the registry"
     __deregister_msg = "Node deregistered successfully"
 
-    def __init__(self, port: int, m: int):
+    def __init__(self, address: str, m: int):
         # the registry: needs the following fields:
         # port: the port's number
         # m: maximum size of the chord's ring
         # nodes_map: dictionary used to map each id to the node's address: ip:port
         # current: the number of current nodes to facilitate checking
-        self.port = port
+        self.address = address
         self.m = m
         self.max_size = 2 ** m
         self.current = 0
@@ -70,7 +71,7 @@ class Registry(pb2_grpc.RegistryServicer):
         return pb2.RegisterReply(id=new_id, m=self.m)
 
     def deregister(self, request, context):
-        node_id = request.id
+        node_id = request.node_id
         if node_id in self.nodes_map:
             result_tuple = (True, self.__deregister_msg)
         else:
@@ -79,8 +80,7 @@ class Registry(pb2_grpc.RegistryServicer):
 
     def __get_sorted_node_ids(self):
         node_ids = list(self.nodes_map.keys())
-        sorted(node_ids)
-        return node_ids
+        return sorted(node_ids)
 
     def __successor(self, value, keys_sorted=None):
         if keys_sorted is None:
@@ -101,13 +101,14 @@ class Registry(pb2_grpc.RegistryServicer):
 
         # this function is only called on node values
         # we can use the following shortcut
-        if node_id < keys_sorted[0]:
+        if node_id <= keys_sorted[0]:
             return keys_sorted[-1]
         # bisect_left returns the leftmost index where a new value can be inserted while maintaining
         # the order of the iterable, since only one instance of node_id
         # belongs to keys_sorted, bisect_left will return the index of the element just
         # before it in O(logN) time complexity
-        return keys_sorted[bisect_left(keys_sorted, node_id)]
+        index = bisect_left(keys_sorted, node_id)
+        return keys_sorted[index - 1]
 
     def populate_finger_table(self, request, context):
         # retrieve the id of the node for which the finger table is to be produced
@@ -131,7 +132,8 @@ class Registry(pb2_grpc.RegistryServicer):
             if new_id not in finger_table_keys:
                 new_finger_table_entry = pb2.FingerTableEntry(node_id=new_id, address=self.nodes_map[new_id])
                 finger_table.append(new_finger_table_entry)
-
+                # add the new id to the keys to avoid duplicates
+                finger_table_keys.add(new_id)
             power_two *= 2
 
         # return the PopulateReply object
@@ -143,13 +145,13 @@ class Registry(pb2_grpc.RegistryServicer):
         return pb2.InfoReply(nodes=self.nodes_map.copy())
 
 
-def main(port: int = DEFAULT_PORT, m: int = DEFAULT_M):
+def main(address: str = DEFAULT_ADDRESS, m: int = DEFAULT_M):
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=MAX_WORKERS))
     # set the service of the Registry
 
-    pb2_grpc.add_RegistryServicer_to_server(Registry(port, m), server)
+    pb2_grpc.add_RegistryServicer_to_server(Registry(address, m), server)
 
-    server.add_insecure_port(f"127.0.0.1:{str(port)}")
+    server.add_insecure_port(address)
     server.start()
     try:
         server.wait_for_termination()
@@ -160,6 +162,6 @@ def main(port: int = DEFAULT_PORT, m: int = DEFAULT_M):
 if __name__ == "__main__":
     args = sys.argv
     if len(args) >= 3:
-        main(int(args[1]), int(args[2]))
+        main(args[1], int(args[2]))
     else:
         main()

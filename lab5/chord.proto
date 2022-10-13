@@ -25,7 +25,7 @@ message RegisterReply {
 
 // classes for the de register functionality
 message DeregisterRequest {
-  uint32 address = 1;
+  uint32 node_id = 1;
 }
 
 message DeregisterReply {

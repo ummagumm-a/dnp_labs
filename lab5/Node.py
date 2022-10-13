@@ -27,7 +27,13 @@ def poll_finger_table_updates(obj: Node):
         response = obj.registry_stub.populate_finger_table(request)
         obj.predecessor = response.predecessor
         obj.finger_table = response.finger_table
-        sleep(1)
+
+        print("#" * 50)
+        print(f"Node's id: {str(obj.node_id)}")
+        print(f"predecessor: {str(obj.predecessor.node_id)}")
+        for i in range(len(obj.finger_table)):
+            print(f"{str(i)}: node id:{str(obj.finger_table[i].node_id)}, address: {str(obj.finger_table[i].address)}")
+        sleep(15)
 
 
 class Node(pb2_grpc.NodeServicer):
@@ -44,9 +50,9 @@ class Node(pb2_grpc.NodeServicer):
         # after obtaining the node_id, predecessor and finger_table, the node is ready to request
         # the keys from its successor
         self.get_keys_successor()
-        self.poller_handler = self._poll_finger_table_updates_spawn()
+        # self.poller_handler = self._poll_finger_table_updates_spawn()
 
-    def _initialize(self) -> (pb2_grpc.RegistryStub, int, int, list[(int, str)], pb2.FingerTableEntry):
+    def _initialize(self) -> (pb2_grpc.RegistryStub, int, int, list[pb2.FingerTableEntry], pb2.FingerTableEntry):
         """
         This function initializes all important fields and registers itself in the registry.
         """
@@ -67,7 +73,9 @@ class Node(pb2_grpc.NodeServicer):
 
         # keep in mind that response.finger_table is an array of FingerTableEntry objects
         finger_table = response.finger_table
-
+        # added for debugging purposes
+        for i in range(len(finger_table)):
+            print(f"{str(i)}: node id:{str(finger_table[i].node_id)}, address: {str(finger_table[i].address)}")
         return registry_stub, node_id, m, finger_table, predecessor
 
     def _poll_finger_table_updates_spawn(self):
@@ -206,41 +214,44 @@ class Node(pb2_grpc.NodeServicer):
         :return: nothing
         """
         # step 1
+
         successor_address = self.finger_table[0].address  # , can be replaced with self.finger_table[0][1]
-        # set the channel of communication
-        channel_successor = grpc.insecure_channel(successor_address)
-        # create the client
-        stub_successor = pb2_grpc.NodeStub(channel_successor)
-        # notify the successor
-        notification = pb2.NotificationRequest(new_neighbor=self.predecessor)
-        # receive notification
-        notification_reply = stub_successor.successor_notification(notification)
+        if successor_address != self.node_address:
+            # print("THIS NODE IS THE ONLY NODE IN THE CHORD: CAN'T GET RID OF IT.")
+            # set the channel of communication
+            channel_successor = grpc.insecure_channel(successor_address)
+            # create the client
+            stub_successor = pb2_grpc.NodeStub(channel_successor)
+            # notify the successor
+            notification = pb2.NotificationRequest(new_neighbor=self.predecessor)
+            # receive notification
+            notification_reply = stub_successor.successor_notification(notification)
 
-        if not notification_reply.set:
-            print("THE SUCCESSOR COULD NOT SET ITS PREDECESSOR SUCCESSFULLY. ABORTING!!")
-            return
+            if not notification_reply.set:
+                print("THE SUCCESSOR COULD NOT SET ITS PREDECESSOR SUCCESSFULLY. ABORTING!!")
+                return
 
-        # step 2
-        channel_predecessor = grpc.insecure_channel(self.predecessor.address)
-        stub_predecessor = pb2_grpc.NodeStub(channel_predecessor)
-        notification = pb2.NotificationRequest(new_neighbor=self.finger_table[0])
-        notification_reply = stub_predecessor.predecessor_notification(notification)
+            # step 2
+            channel_predecessor = grpc.insecure_channel(self.predecessor.address)
+            stub_predecessor = pb2_grpc.NodeStub(channel_predecessor)
+            notification = pb2.NotificationRequest(new_neighbor=self.finger_table[0])
+            notification_reply = stub_predecessor.predecessor_notification(notification)
 
-        if not notification_reply.set:
-            print("THE PREDECESSOR COULD NOT SET ITS SUCCESSOR SUCCESSFULLY. ABORTING!!")
-            return
+            if not notification_reply.set:
+                print("THE PREDECESSOR COULD NOT SET ITS SUCCESSOR SUCCESSFULLY. ABORTING!!")
+                return
 
         # step 3 pass all the current keys to the successor
-        for key, text in self.keys_text.copy():
-            save_reply = stub_successor.save_key(key)
-            if not save_reply.result:
-                print(f"THE SUCCESSOR COULD NOT SAVE THE PIECE OF {text} associated with key {key}. ABORTING!!")
-            # remove the pair <key, text> locally
-            self.keys_text.pop(key)
+            for key, text in self.keys_text.copy():
+                save_reply = stub_successor.save_key(key)
+                if not save_reply.result:
+                    print(f"THE SUCCESSOR COULD NOT SAVE THE PIECE OF {text} associated with key {key}. ABORTING!!")
+                # remove the pair <key, text> locally
+                self.keys_text.pop(key)
 
         # step 4: contacting the registry to deregister the node
         # we use the registryStud created in the initialization phase
-        deregister_req = pb2.DeregisterRequest(address=self.node_address)
+        deregister_req = pb2.DeregisterRequest(node_id=self.node_id)
         deregister_reply = self.registry_stub.deregister(deregister_req)
 
         if not deregister_reply.result:
@@ -273,6 +284,10 @@ class Node(pb2_grpc.NodeServicer):
     # this function represents the client code that will code distributeKeys
     def get_keys_successor(self):
         successor_address = self.finger_table[0].address
+        # ignore this step if this node is the only node present in the chord
+        if successor_address == self.node_address:
+            return
+
         channel = grpc.insecure_channel(successor_address)
         stub = pb2_grpc.NodeStub(channel)
         keysRequest = pb2.DistributeRequest(new_node=
@@ -285,15 +300,19 @@ class Node(pb2_grpc.NodeServicer):
 
 
 if __name__ == '__main__':
+
     registry_address = sys.argv[1]
     node_address = sys.argv[2]
 
     # create node object
     node = Node(node_address, registry_address)
-
-    # setup and run server
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    pb2_grpc.add_NodeServicer_to_server(node, server)
-    server.add_insecure_port(node_address)
-    server.start()
-    server.wait_for_termination()
+    try:
+        # setup and run server
+        server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+        pb2_grpc.add_NodeServicer_to_server(node, server)
+        server.add_insecure_port(node_address)
+        server.start()
+        server.wait_for_termination()
+    except KeyboardInterrupt:
+        print("QUITTING. GOOD BYE")
+        node.quit(None, None)
