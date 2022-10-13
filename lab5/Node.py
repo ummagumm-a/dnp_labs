@@ -94,7 +94,7 @@ class Node(pb2_grpc.NodeServicer):
             return eval(f"stub.{operation}")(request)
         
         else:
-            finger_table_node_ids = list(map(lambda x: x[0], self.finger_table))
+            finger_table_node_ids = list(map(lambda x: x.node_id, self.finger_table))
             target_node_index = get_pred(target_id, finger_table_node_ids)
             target_node_address = self.finger_table[target_node_index]
             channel = grpc.insecure_channel(target_node_address)
