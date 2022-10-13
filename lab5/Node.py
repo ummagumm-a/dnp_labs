@@ -10,7 +10,7 @@ import grpc
 
 import chord_pb2 as pb2
 import chord_pb2_grpc as pb2_grpc
-from utils import get_pred, ring_between
+from utils import get_index_of_next_node, ring_between
 
 # set the random seed to ZERO for reproducible results
 SEED = 0
@@ -102,36 +102,47 @@ class Node(pb2_grpc.NodeServicer):
         """
 
         key = request.key
-        target_id = self.encode_key(key)
-        print(type(target_id), target_id)
+        # assign id for this key
+        key_id = self.encode_key(key)
 
-        # succ = get_succ(self.node_id, finger_table.keys())
+        # successor id of current node
         succ = self.finger_table[0].node_id
-        print(type(succ), succ)
-        if ring_between(self.predecessor.node_id, target_id, self.node_id + 1):
-            print(1)
+
+        # if there is only one node in the chord
+        # or key should be stored in current node
+        if self.predecessor.node_id == self.node_id or \
+                ring_between(self.predecessor.node_id, key_id, self.node_id):
             return this_node_callback(request)
 
-        elif ring_between(self.node_id, target_id, succ + 1):
-            print(2)
-            finger_table_node_ids = list(map(lambda x: x.node_id, self.finger_table))
-            succ_address = self.finger_table[finger_table_node_ids.index(succ)].address
+        # if key should be stored in successor node
+        elif ring_between(self.node_id, key_id, succ):
+            # extract successor's address
+            succ_address = self.finger_table[0].address
+            # create connection to successor
             channel = grpc.insecure_channel(succ_address)
             stub = pb2_grpc.NodeStub(channel)
 
+            # forward request to successor
             return eval(f"stub.{operation}")(request)
 
         else:
-            print(3)
-            finger_table_node_ids = list(map(lambda x: x.node_id, self.finger_table))
-            target_node = get_pred(target_id, finger_table_node_ids)
-            target_node_address = self.finger_table[target_node].address
+            # get list of available node ids
+            finger_table_node_ids = [x.node_id for x in self.finger_table]
+            # get id of next node to forward request to
+            target_node_id = get_index_of_next_node(key_id, finger_table_node_ids)
+            # get its address
+            target_node_address = self.finger_table[target_node_id].address
+            # create connection with next node
             channel = grpc.insecure_channel(target_node_address)
             stub = pb2_grpc.NodeStub(channel)
 
+            # forward request to next node
             return eval(f"stub.{operation}")(request)
 
     def encode_key(self, key):
+        """
+        Map key into position on the chord.
+        """
         hash_value = zlib.adler32(key.encode())
         target_id = hash_value % 2 ** self.m
 
@@ -139,17 +150,15 @@ class Node(pb2_grpc.NodeServicer):
 
     def save_key(self, request, context):
         print('save')
+
         def this_node_callback(request: pb2.SaveRequest):
             key, text = request.key, request.text
 
             if key in self.keys_text.keys():
 
-                print(self.keys_text)
                 return pb2.SaveReply(result=False, error_message="Key already exists.")
             else:
                 self.keys_text[key] = text
-
-                print(self.keys_text)
 
                 return pb2.SaveReply(result=True, node_id=self.node_id)
 
@@ -157,6 +166,7 @@ class Node(pb2_grpc.NodeServicer):
 
     def remove_key(self, request, context):
         print('remove')
+
         def this_node_callback(request):
             key = request.key
 
@@ -173,6 +183,7 @@ class Node(pb2_grpc.NodeServicer):
 
     def find_key(self, request, context):
         print('find')
+
         def this_node_callback(request):
             key = request.key
 
@@ -259,7 +270,7 @@ class Node(pb2_grpc.NodeServicer):
                 return
 
         # step 3 pass all the current keys to the successor
-            print([(key, text, self.encode_key(key) for key, text in self.keys_text)])
+            print([(key, text, self.encode_key(key)) for key, text in self.keys_text])
             for key, text in self.keys_text.copy():
                 # ask successor to save the key
                 stub_successor.save_key(pb2.SaveRequest(key=key, text=text))
@@ -301,14 +312,14 @@ class Node(pb2_grpc.NodeServicer):
         distributed_keys = [pb2.SaveRequest(key=key, text=value) for key, value in self.keys_text
                             if new_node_id >= self.encode_key(key) > self.predecessor.node_id]
         # print keys before deleting keys
-        print([(key, text, self.encode_key(key) for key, text in self.keys_text)])
+        print([(key, text, self.encode_key(key)) for key, text in self.keys_text])
 
         # delete the keys that should be transferred
         for save_request in distributed_keys:
             self.keys_text.pop(save_request.key)
 
         # print keys after deleting keys
-        print([(key, text, self.encode_key(key) for key, text in self.keys_text)])
+        print([(key, text, self.encode_key(key)) for key, text in self.keys_text])
 
         # send the result
         return pb2.DistributeReply(moved_keys=distributed_keys)

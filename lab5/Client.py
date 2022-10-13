@@ -139,29 +139,30 @@ def make_args(match: re.Match):
         i += 1
         args.append(arg)
 
+
 def parse_input(inp: str):
     """
     Accepts an input string and returns query with arguments.
     """
     # List patterns of acceptable messages
-    connect_regex = "(connect) (\d+.\d+.\d+.\d+):(\d+)"
-    get_info_regex = "(get_info)"
-    save_regex = '(save) "(\w+)" (.*)'
-    remove_regex = '(remove) "(\w+)"'
-    find_regex = '(find) "(\w+)"'
+    connect_regex = r"(connect) (\d+\.\d+\.\d+\.\d+):(\d+)"
+    get_info_regex = r"(get_info)"
+    save_regex = r'(save) "(\w+)" (.*)'
+    remove_regex = r'(remove) "(\w+)"'
+    find_regex = r'(find) "(\w+)"'
 
     # Compile them into regex patterns
     patterns = [connect_regex, get_info_regex, save_regex, remove_regex, find_regex]
-    patterns = list(map(re.compile, patterns))
 
     # Check each pattern
     for pattern in patterns:
-        match = pattern.match(inp)
+        match = re.fullmatch(pattern, inp)
         # If matched successfully
         if match is not None:
             return match[1], make_args(match)
     
     return None, None
+
 
 def cli_loop():
     client_connection = ClientConnection()
@@ -180,5 +181,5 @@ def cli_loop():
 
 if __name__ == '__main__':
     cli_loop()
-    # temp_main()
+
 
