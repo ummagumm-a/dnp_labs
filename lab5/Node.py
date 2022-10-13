@@ -33,7 +33,7 @@ def poll_finger_table_updates(obj: Node):
         print(f"predecessor: {str(obj.predecessor.node_id)}")
         for i in range(len(obj.finger_table)):
             print(f"{str(i)}: node id:{str(obj.finger_table[i].node_id)}, address: {str(obj.finger_table[i].address)}")
-        sleep(15)
+        sleep(5)
 
 
 class Node(pb2_grpc.NodeServicer):
@@ -50,7 +50,7 @@ class Node(pb2_grpc.NodeServicer):
         # after obtaining the node_id, predecessor and finger_table, the node is ready to request
         # the keys from its successor
         self.get_keys_successor()
-        # self.poller_handler = self._poll_finger_table_updates_spawn()
+        self.poller_handler = self._poll_finger_table_updates_spawn()
 
     def _initialize(self) -> (pb2_grpc.RegistryStub, int, int, list[pb2.FingerTableEntry], pb2.FingerTableEntry):
         """
@@ -216,38 +216,38 @@ class Node(pb2_grpc.NodeServicer):
         # step 1
 
         successor_address = self.finger_table[0].address  # , can be replaced with self.finger_table[0][1]
-        if successor_address != self.node_address:
-            # print("THIS NODE IS THE ONLY NODE IN THE CHORD: CAN'T GET RID OF IT.")
-            # set the channel of communication
-            channel_successor = grpc.insecure_channel(successor_address)
-            # create the client
-            stub_successor = pb2_grpc.NodeStub(channel_successor)
-            # notify the successor
-            notification = pb2.NotificationRequest(new_neighbor=self.predecessor)
-            # receive notification
-            notification_reply = stub_successor.successor_notification(notification)
-
-            if not notification_reply.set:
-                print("THE SUCCESSOR COULD NOT SET ITS PREDECESSOR SUCCESSFULLY. ABORTING!!")
-                return
-
-            # step 2
-            channel_predecessor = grpc.insecure_channel(self.predecessor.address)
-            stub_predecessor = pb2_grpc.NodeStub(channel_predecessor)
-            notification = pb2.NotificationRequest(new_neighbor=self.finger_table[0])
-            notification_reply = stub_predecessor.predecessor_notification(notification)
-
-            if not notification_reply.set:
-                print("THE PREDECESSOR COULD NOT SET ITS SUCCESSOR SUCCESSFULLY. ABORTING!!")
-                return
-
-        # step 3 pass all the current keys to the successor
-            for key, text in self.keys_text.copy():
-                save_reply = stub_successor.save_key(key)
-                if not save_reply.result:
-                    print(f"THE SUCCESSOR COULD NOT SAVE THE PIECE OF {text} associated with key {key}. ABORTING!!")
-                # remove the pair <key, text> locally
-                self.keys_text.pop(key)
+        # if successor_address != self.node_address:
+        #     # print("THIS NODE IS THE ONLY NODE IN THE CHORD: CAN'T GET RID OF IT.")
+        #     # set the channel of communication
+        #     channel_successor = grpc.insecure_channel(successor_address)
+        #     # create the client
+        #     stub_successor = pb2_grpc.NodeStub(channel_successor)
+        #     # notify the successor
+        #     notification = pb2.NotificationRequest(new_neighbor=self.predecessor)
+        #     # receive notification
+        #     notification_reply = stub_successor.successor_notification(notification)
+        #
+        #     if not notification_reply.set:
+        #         print("THE SUCCESSOR COULD NOT SET ITS PREDECESSOR SUCCESSFULLY. ABORTING!!")
+        #         return
+        #
+        #     # step 2
+        #     channel_predecessor = grpc.insecure_channel(self.predecessor.address)
+        #     stub_predecessor = pb2_grpc.NodeStub(channel_predecessor)
+        #     notification = pb2.NotificationRequest(new_neighbor=self.finger_table[0])
+        #     notification_reply = stub_predecessor.predecessor_notification(notification)
+        #
+        #     if not notification_reply.set:
+        #         print("THE PREDECESSOR COULD NOT SET ITS SUCCESSOR SUCCESSFULLY. ABORTING!!")
+        #         return
+        #
+        # # step 3 pass all the current keys to the successor
+        #     for key, text in self.keys_text.copy():
+        #         save_reply = stub_successor.save_key(key)
+        #         if not save_reply.result:
+        #             print(f"THE SUCCESSOR COULD NOT SAVE THE PIECE OF {text} associated with key {key}. ABORTING!!")
+        #         # remove the pair <key, text> locally
+        #         self.keys_text.pop(key)
 
         # step 4: contacting the registry to deregister the node
         # we use the registryStud created in the initialization phase

@@ -74,6 +74,8 @@ class Registry(pb2_grpc.RegistryServicer):
         node_id = request.node_id
         if node_id in self.nodes_map:
             result_tuple = (True, self.__deregister_msg)
+            # remove the actual node id
+            self.nodes_map.pop(node_id)
         else:
             result_tuple = (False, self.__no_id_msg)
         return pb2.DeregisterReply(**{"result": result_tuple[0], "message": result_tuple[1]})
