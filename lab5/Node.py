@@ -2,7 +2,7 @@ import random
 import sys
 import zlib
 from concurrent import futures
-from threading import Thread
+from threading import Thread, Event
 from time import sleep
 from typing import Callable
 
@@ -21,8 +21,8 @@ class Node(pb2_grpc.NodeServicer):
     pass
 
 
-def poll_finger_table_updates(obj: Node):
-    while True:
+def poll_finger_table_updates(obj: Node, run_event: Event):
+    while run_event.is_set():
         request = pb2.PopulateRequest(node_id=obj.node_id)
         response = obj.registry_stub.populate_finger_table(request)
         obj.predecessor = response.predecessor
@@ -50,7 +50,7 @@ class Node(pb2_grpc.NodeServicer):
         # after obtaining the node_id, predecessor and finger_table, the node is ready to request
         # the keys from its successor
         self.get_keys_successor()
-        self.poller_handler = self._poll_finger_table_updates_spawn()
+        self.poller_handler, self.run_event = self._poll_finger_table_updates_spawn()
 
     def _initialize(self) -> (pb2_grpc.RegistryStub, int, int, list[pb2.FingerTableEntry], pb2.FingerTableEntry):
         """
@@ -79,9 +79,12 @@ class Node(pb2_grpc.NodeServicer):
         return registry_stub, node_id, m, finger_table, predecessor
 
     def _poll_finger_table_updates_spawn(self):
-        handler = Thread(target=poll_finger_table_updates, args=(self,))
+        run_event = Event()
+        run_event.set()
+
+        handler = Thread(target=poll_finger_table_updates, args=(self, run_event))
         handler.start()
-        return handler
+        return handler, run_event
 
     def get_finger_table(self, request, context):
         # the request is created with no fields, so it will be ignored
@@ -233,6 +236,7 @@ class Node(pb2_grpc.NodeServicer):
         """
         This method is created to remove a node from the chord correctly. This is implemented through the following
         steps:
+        0. stop the polling thread
         1. set the predecessor of the successor node to the predecessor of the current node
         2. set the successor of the predecessor node to the successor of the current node
         3. save all the current keys in the successor
@@ -241,6 +245,10 @@ class Node(pb2_grpc.NodeServicer):
         :param context:
         :return: nothing
         """
+
+        # step 0
+        self.run_event.clear()
+        self.poller_handler.join()
         # step 1
         successor_address = self.finger_table[0].address  # , can be replaced with self.finger_table[0][1]
 
