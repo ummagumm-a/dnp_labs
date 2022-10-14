@@ -249,6 +249,7 @@ class Node(pb2_grpc.NodeServicer):
         # step 0
         self.run_event.clear()
         self.poller_handler.join()
+
         # step 1
         successor_address = self.finger_table[0].address  # , can be replaced with self.finger_table[0][1]
 
