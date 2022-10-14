@@ -125,6 +125,12 @@ class ClientConnection:
 
         return self._stub_type_check_and_execute(node_callback, registry_callback)
 
+    # def quit(self):
+    #     def node_callback():
+    #         quit_request = pb2.QuitRequest()
+    #         response = self.stub()
+    #
+
 def make_args(match: re.Match):
     """
     Creates a list of arguments parsed from matched string.
@@ -147,6 +153,7 @@ def parse_input(inp: str):
     # List patterns of acceptable messages
     connect_regex = r"(connect) (\d+\.\d+\.\d+\.\d+):(\d+)"
     get_info_regex = r"(get_info)"
+
     save_regex = r'(save)\s+"(.*)" (.*)'
     remove_regex = r'(remove)\s+"(.*)"'
     find_regex = r'(find)\s+"(.*)"'

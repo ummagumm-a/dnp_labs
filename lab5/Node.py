@@ -15,7 +15,7 @@ from utils import get_index_of_next_node, ring_between
 # set the random seed to ZERO for reproducible results
 SEED = 0
 random.seed(SEED)
-SLEEP_TIME = 1
+SLEEP_TIME = 60
 
 class Node(pb2_grpc.NodeServicer):
     pass
@@ -26,13 +26,20 @@ def poll_finger_table_updates(obj: Node, run_event: Event):
         request = pb2.PopulateRequest(node_id=obj.node_id)
         response = obj.registry_stub.populate_finger_table(request)
         obj.predecessor = response.predecessor
-        obj.finger_table = response.finger_table
+        # the response.finger_table is an immutable iterable object, that can't have its elements assigned.
+        # it should be iterated through so the elements can be assigned freely afterwards: without ERRORS
+        obj.finger_table = [ft for ft in response.finger_table]
+
 
         print("#" * 50)
         print(f"Node's id: {str(obj.node_id)}")
         print(f"predecessor: {str(obj.predecessor.node_id)}")
         for i in range(len(obj.finger_table)):
             print(f"{str(i)}: node id:{str(obj.finger_table[i].node_id)}, address: {str(obj.finger_table[i].address)}")
+
+        print("CURRENT KEYS: " + "#" * 40)
+        print([(key, text, obj.encode_key(key)) for key, text in obj.keys_text.items()])
+
         sleep(SLEEP_TIME)
 
 
@@ -50,6 +57,7 @@ class Node(pb2_grpc.NodeServicer):
         # after obtaining the node_id, predecessor and finger_table, the node is ready to request
         # the keys from its successor
         self.get_keys_successor()
+
         self.poller_handler, self.run_event = self._poll_finger_table_updates_spawn()
 
     def _initialize(self) -> (pb2_grpc.RegistryStub, int, int, list[pb2.FingerTableEntry], pb2.FingerTableEntry):
@@ -72,7 +80,7 @@ class Node(pb2_grpc.NodeServicer):
         predecessor = response.predecessor
 
         # keep in mind that response.finger_table is an array of FingerTableEntry objects
-        finger_table = response.finger_table
+        finger_table = [ft for ft in response.finger_table]
         # added for debugging purposes
         for i in range(len(finger_table)):
             print(f"{str(i)}: node id:{str(finger_table[i].node_id)}, address: {str(finger_table[i].address)}")
@@ -206,14 +214,14 @@ class Node(pb2_grpc.NodeServicer):
         :param context:
         :return: nothing, set the new value accordingly
         """
+        node_id = request.new_neighbor.node_id
+        address = request.new_neighbor.address
         try:
             # the new successor is the first value in the finger table
-            self.finger_table[0] = request.new_neighbor
-            # or if we are using tuples
-            # self.finger_table[0] = (request.new_neighbor.node_id, request.new_neighbor.address)
-            return pb2.NotificationRequest(set=True)
+            self.finger_table[0] = pb2.FingerTableEntry(node_id=node_id, address=address)
+            return pb2.NotificationReply(result=True)
         except:
-            return pb2.NotificationRequest(set=False)
+            return pb2.NotificationReply(result=False)
 
     def successor_notification(self, request, context):
         """
@@ -225,12 +233,9 @@ class Node(pb2_grpc.NodeServicer):
         try:
             # the predecessor is set separately as a field
             self.predecessor = request.new_neighbor
-
-            # of if we are using tuples
-            # self.predecessor = (request.new_neighbor.node_id, request.new_neighbor.address)
-            return pb2.NotificationRequest(set=True)
+            return pb2.NotificationReply(result=True)
         except:
-            return pb2.NotificationRequest(set=False)
+            return pb2.NotificationReply(result=False)
 
     def quit(self, request, context):
         """
@@ -279,8 +284,8 @@ class Node(pb2_grpc.NodeServicer):
                 return
 
         # step 3 pass all the current keys to the successor
-            print([(key, text, self.encode_key(key)) for key, text in self.keys_text])
-            for key, text in self.keys_text.copy():
+            print([(key, text, self.encode_key(key)) for key, text in self.keys_text.items()])
+            for key, text in self.keys_text.copy().items():
                 # ask successor to save the key
                 stub_successor.save_key(pb2.SaveRequest(key=key, text=text))
 
@@ -291,7 +296,7 @@ class Node(pb2_grpc.NodeServicer):
                 self.keys_text.pop(key)
 
             # print if it is empty
-            print(not self.keys_text)
+            assert not self.keys_text
 
         # step 4: contacting the registry to deregister the node
         # we use the registryStud created in the initialization phase
@@ -300,6 +305,8 @@ class Node(pb2_grpc.NodeServicer):
 
         # print the message from registry!!!
         print(deregister_reply.message)
+
+        sys.exit()
 
     # this function is executed by a successor node. The successor Node will play the role of a server
     # while the newly-added node will play the role of a client. For this reason, a new function is needed
@@ -317,18 +324,21 @@ class Node(pb2_grpc.NodeServicer):
         """
         # extract the id of the new node
         new_node_id = request.new_node.node_id
+        print(f"RECEIVED REQUEST FROM {str(new_node_id)}, address: {request.new_node.address}")
         # filter the keys that should be stored in the new node: found based on the mathematical expression below
-        distributed_keys = [pb2.SaveRequest(key=key, text=value) for key, value in self.keys_text
-                            if new_node_id >= self.encode_key(key) > self.predecessor.node_id]
+        distributed_keys = [pb2.SaveRequest(key=key, text=value) for key, value in self.keys_text.items()
+                            if ring_between(self.predecessor.node_id, self.encode_key(key), new_node_id)]
+
+        print("before distributing")
         # print keys before deleting keys
-        print([(key, text, self.encode_key(key)) for key, text in self.keys_text])
+        print([(key, text, self.encode_key(key)) for key, text in self.keys_text.items()])
 
         # delete the keys that should be transferred
         for save_request in distributed_keys:
             self.keys_text.pop(save_request.key)
-
+        print("after distributing")
         # print keys after deleting keys
-        print([(key, text, self.encode_key(key)) for key, text in self.keys_text])
+        print([(key, text, self.encode_key(key)) for key, text in self.keys_text.items()])
 
         # send the result
         return pb2.DistributeReply(moved_keys=distributed_keys)
@@ -340,16 +350,29 @@ class Node(pb2_grpc.NodeServicer):
         # ignore this step if this node is the only node present in the chord
         if successor_address == self.node_address:
             return
+
         # connect to the successor
-        channel = grpc.insecure_channel(successor_address)
-        stub = pb2_grpc.NodeStub(channel)
         # create a request to send
-        keysRequest = pb2.DistributeRequest(new_node=
-                                            pb2.FingerTableEntry(node_id=self.node_id, address=self.node_address))
-        # receive the keys that should be deleted
-        keysReply = stub.distributeKeys(keysRequest)
+        while True:
+            try:
+                channel = grpc.insecure_channel(successor_address, options=(('grpc.enable_http_proxy', 0),))
+                stub = pb2_grpc.NodeStub(channel)
+                keysRequest = pb2.DistributeRequest(new_node=
+                                                    pb2.FingerTableEntry(node_id=self.node_id,
+                                                                         address=self.node_address))
+
+                print(f"SENT REQUEST TO {successor_address}, id: {str(self.finger_table[0].node_id)}")
+                # receive the keys that should be deleted
+                keysReply = stub.distributeKeys(keysRequest)
+                break
+            except:
+                print("SOME ERROR OCCURED WHEN ACQUIRING THE KEYS: RECONNECTING")
+
         # the received object is a KeysRequest object with one field moved_keys which is an array of SaveRequest objects
         # each containing key and text fields
+        print("new keys")
+        print([(SR.key, SR.text) for SR in keysReply.moved_keys])
+
         for SR in keysReply.moved_keys:
             self.keys_text[SR.key] = SR.text
 
