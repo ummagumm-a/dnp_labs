@@ -147,9 +147,9 @@ def parse_input(inp: str):
     # List patterns of acceptable messages
     connect_regex = r"(connect) (\d+\.\d+\.\d+\.\d+):(\d+)"
     get_info_regex = r"(get_info)"
-    save_regex = r'(save) "(\w+)" (.*)'
-    remove_regex = r'(remove) "(\w+)"'
-    find_regex = r'(find) "(\w+)"'
+    save_regex = r'(save)\s+"(.*)" (.*)'
+    remove_regex = r'(remove)\s+"(.*)"'
+    find_regex = r'(find)\s+"(.*)"'
 
     # Compile them into regex patterns
     patterns = [connect_regex, get_info_regex, save_regex, remove_regex, find_regex]
