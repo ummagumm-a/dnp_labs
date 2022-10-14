@@ -75,7 +75,7 @@ class Registry(pb2_grpc.RegistryServicer):
             self.nodes_map.pop(node_id)
         else:
             result_tuple = (False, self.__no_id_msg)
-        return pb2.DeregisterRequest(result=result_tuple[0], message=result_tuple[1])
+        return pb2.DeregisterReply(result=result_tuple[0], message=result_tuple[1])
 
     def __get_sorted_node_ids(self):
         node_ids = list(self.nodes_map.keys())
