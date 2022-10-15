@@ -42,16 +42,18 @@ class ClientConnection:
         #     raise Exception(f"Couldn't create a connection to {ipaddr}:{port}.")
         # TODO: these exceptions will not work because the code doesn't throw an error when creating NodeStub with Registry's IP:PORT
         channel = grpc.insecure_channel(f'{ipaddr}:{port}')
-        try:
-            # set the reverse service
-            self.stub = pb2_grpc.NodeStub(channel)
+        self.stub = pb2_grpc.NodeStub(channel)
 
-            return "Connected sucessfully"
-        except Exception:
+        try:
+            self.stub.checkConnection(pb2.CheckConnectionRequest())
+        except grpc._channel._InactiveRpcError:
+            self.stub = pb2_grpc.RegistryStub(channel)
             try:
-                self.stub = pb2_grpc.RegistryStub(channel)
-            except:
-                raise Exception(f"Couldn't create a connection to {ipaddr}:{port}.")
+                self.stub.checkConnection(pb2.CheckConnectionRequest())
+            except grpc._channel._InactiveRpcError:
+                raise Exception("Remote is neither a Node nor a Registry. Or nothing exists on that address.")
+
+        return "Connected Successfully"
 
     def get_info(self):
         """
@@ -61,10 +63,10 @@ class ClientConnection:
         Both in string representation. This function is only used for visualization purposes.
         """
         def node_callback():
-            return str(self.stub.get_finger_table(pb2.InfoRequest()))
+            return str(self.stub.get_finger_table(pb2.InfoRequest()).nodes)
 
         def registry_callback():
-            return str(self.stub.get_chord_info(pb2.InfoRequest()))
+            return str(self.stub.get_chord_info(pb2.InfoRequest()).nodes)
         
         return self._stub_type_check_and_execute(node_callback, registry_callback)
 

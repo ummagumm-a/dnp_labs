@@ -141,7 +141,15 @@ class Registry(pb2_grpc.RegistryServicer):
     def get_chord_info(self, request, context):
         # the request is created with no fields, so it will be ignored
         # this function will return a copy of the current map saved inside the Registry
-        return pb2.InfoReply(nodes=self.nodes_map.copy())
+        nodes = list(self.nodes_map.items())
+        nodes = list(map(lambda x: pb2.FingerTableEntry(node_id=x[0], address=x[1]), nodes))
+        return pb2.InfoReply(nodes=nodes)
+
+    def checkConnection(self, request, context):
+        """
+        Return type of this process (e.g. whether it is a registry or a node).
+        """
+        return pb2.CheckConnectionReply()
 
 
 def main(address: str = DEFAULT_ADDRESS, m: int = DEFAULT_M):

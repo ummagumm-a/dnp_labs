@@ -9,6 +9,7 @@ service Registry {
   rpc deregister (DeregisterRequest) returns (DeregisterReply); // called ONLY by Node objects
   rpc populate_finger_table(PopulateRequest) returns (PopulateReply); // called ONLY by Node objects
   rpc get_chord_info (InfoRequest) returns (InfoReply); // called ONLY BY CLIENT
+  rpc checkConnection(CheckConnectionRequest) returns (CheckConnectionReply); // called by client to ensure successful connection
 }
 // classes for the register functionality
 message RegisterRequest {
@@ -73,6 +74,7 @@ service Node {
   rpc predecessor_notification(NotificationRequest) returns (NotificationReply);
   rpc successor_notification(NotificationRequest) returns (NotificationReply);
   rpc distributeKeys(DistributeRequest) returns (DistributeReply);
+  rpc checkConnection(CheckConnectionRequest) returns (CheckConnectionReply); // called by client to ensure successful connection
 }
 
 // classes for the save functionality
@@ -141,3 +143,7 @@ message DistributeRequest {
 message DistributeReply {
   repeated SaveRequest moved_keys=1;
 }
+
+message CheckConnectionRequest {}
+
+message CheckConnectionReply {}

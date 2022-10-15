@@ -15,7 +15,7 @@ from utils import get_index_of_next_node, ring_between
 # set the random seed to ZERO for reproducible results
 SEED = 0
 random.seed(SEED)
-SLEEP_TIME = 60
+SLEEP_TIME = 1
 
 class Node(pb2_grpc.NodeServicer):
     pass
@@ -160,8 +160,6 @@ class Node(pb2_grpc.NodeServicer):
         return target_id
 
     def save_key(self, request, context):
-        print('save')
-
         def this_node_callback(request: pb2.SaveRequest):
             key, text = request.key, request.text
 
@@ -176,15 +174,11 @@ class Node(pb2_grpc.NodeServicer):
         return self._lookup_and_execute(request, this_node_callback, "save_key")
 
     def remove_key(self, request, context):
-        print('remove')
-
         def this_node_callback(request):
             key = request.key
 
             if key in self.keys_text.keys():
                 del self.keys_text[key]
-
-                print(self.keys_text)
 
                 return pb2.RemoveReply(result=True, node_id=self.node_id)
             else:
@@ -193,14 +187,10 @@ class Node(pb2_grpc.NodeServicer):
         return self._lookup_and_execute(request, this_node_callback, "remove_key")
 
     def find_key(self, request, context):
-        print('find')
-
         def this_node_callback(request):
             key = request.key
 
             if key in self.keys_text.keys():
-
-                print(self.keys_text)
                 return pb2.FindReply(result=True, node=pb2.FingerTableEntry(node_id=self.node_id, address=self.node_address))
 
             return pb2.FindReply(result=False, error_message="No such key")
@@ -259,7 +249,7 @@ class Node(pb2_grpc.NodeServicer):
         successor_address = self.finger_table[0].address  # , can be replaced with self.finger_table[0][1]
 
         if successor_address != self.node_address:
-            # print("THIS NODE IS THE ONLY NODE IN THE CHORD: CAN'T GET RID OF IT.")
+            print("THIS NODE IS THE ONLY NODE IN THE CHORD: CAN'T GET RID OF IT.")
             # set the channel of communication
             channel_successor = grpc.insecure_channel(successor_address)
             # create the client
@@ -284,7 +274,6 @@ class Node(pb2_grpc.NodeServicer):
                 return
 
         # step 3 pass all the current keys to the successor
-            print([(key, text, self.encode_key(key)) for key, text in self.keys_text.items()])
             for key, text in self.keys_text.copy().items():
                 # ask successor to save the key
                 stub_successor.save_key(pb2.SaveRequest(key=key, text=text))
@@ -375,6 +364,12 @@ class Node(pb2_grpc.NodeServicer):
 
         for SR in keysReply.moved_keys:
             self.keys_text[SR.key] = SR.text
+
+    def checkConnection(self, request, context):
+        """
+        Return type of this process (e.g. whether it is a registry or a node).
+        """
+        return pb2.CheckConnectionReply()
 
 
 if __name__ == '__main__':
