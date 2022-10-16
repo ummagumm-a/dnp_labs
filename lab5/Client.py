@@ -178,7 +178,7 @@ def cli_loop():
 
     while True:
         inp = input("> ")
-        if inp == 'exit':
+        if inp == 'quit':
             break
         query, args = parse_input(inp)
         if query is None:

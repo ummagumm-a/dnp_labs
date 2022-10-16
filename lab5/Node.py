@@ -15,7 +15,7 @@ from utils import get_index_of_next_node, ring_between
 # set the random seed to ZERO for reproducible results
 SEED = 0
 random.seed(SEED)
-SLEEP_TIME = 1
+SLEEP_TIME = 10
 
 class Node(pb2_grpc.NodeServicer):
     pass
@@ -32,13 +32,17 @@ def poll_finger_table_updates(obj: Node, run_event: Event):
 
 
         print("#" * 50)
-        print(f"Node's id: {str(obj.node_id)}")
-        print(f"predecessor: {str(obj.predecessor.node_id)}")
+        print(f"Node's id: {str(obj.node_id)}, Node's address: {str(obj.node_address)}")
+        print(f"predecessor's id: {str(obj.predecessor.node_id)}, address: {str(obj.predecessor.address)}")
+        print("FINGER TABLE:")
         for i in range(len(obj.finger_table)):
             print(f"{str(i)}: node id:{str(obj.finger_table[i].node_id)}, address: {str(obj.finger_table[i].address)}")
 
-        print("CURRENT KEYS: " + "#" * 40)
-        print([(key, text, obj.encode_key(key)) for key, text in obj.keys_text.items()])
+        print("\n")
+        if obj.keys_text:
+            print("CURRENT KEYS: " + "#" * 40)
+            print([(key, text, obj.encode_key(key)) for key, text in obj.keys_text.items()])
+            print("\n\n")
 
         sleep(SLEEP_TIME)
 
@@ -81,9 +85,6 @@ class Node(pb2_grpc.NodeServicer):
 
         # keep in mind that response.finger_table is an array of FingerTableEntry objects
         finger_table = [ft for ft in response.finger_table]
-        # added for debugging purposes
-        for i in range(len(finger_table)):
-            print(f"{str(i)}: node id:{str(finger_table[i].node_id)}, address: {str(finger_table[i].address)}")
         return registry_stub, node_id, m, finger_table, predecessor
 
     def _poll_finger_table_updates_spawn(self):
@@ -249,7 +250,6 @@ class Node(pb2_grpc.NodeServicer):
         successor_address = self.finger_table[0].address  # , can be replaced with self.finger_table[0][1]
 
         if successor_address != self.node_address:
-            print("THIS NODE IS THE ONLY NODE IN THE CHORD: CAN'T GET RID OF IT.")
             # set the channel of communication
             channel_successor = grpc.insecure_channel(successor_address)
             # create the client
@@ -278,14 +278,10 @@ class Node(pb2_grpc.NodeServicer):
                 # ask successor to save the key
                 stub_successor.save_key(pb2.SaveRequest(key=key, text=text))
 
-                # if not save_reply.result:
-                #     print(f"THE SUCCESSOR COULD NOT SAVE THE PIECE OF {text} associated with key {key}. ABORTING!!")
-
                 # remove the pair <key, text> locally
                 self.keys_text.pop(key)
 
-            # print if it is empty
-            assert not self.keys_text
+            # assert not self.keys_text
 
         # step 4: contacting the registry to deregister the node
         # we use the registryStud created in the initialization phase
@@ -318,16 +314,18 @@ class Node(pb2_grpc.NodeServicer):
         distributed_keys = [pb2.SaveRequest(key=key, text=value) for key, value in self.keys_text.items()
                             if ring_between(self.predecessor.node_id, self.encode_key(key), new_node_id)]
 
-        print("before distributing")
+        print("KEYS before distributing")
         # print keys before deleting keys
         print([(key, text, self.encode_key(key)) for key, text in self.keys_text.items()])
 
         # delete the keys that should be transferred
         for save_request in distributed_keys:
             self.keys_text.pop(save_request.key)
-        print("after distributing")
+        print("KEYS after distributing")
         # print keys after deleting keys
         print([(key, text, self.encode_key(key)) for key, text in self.keys_text.items()])
+
+        print("\n\n")
 
         # send the result
         return pb2.DistributeReply(moved_keys=distributed_keys)
@@ -355,13 +353,13 @@ class Node(pb2_grpc.NodeServicer):
                 keysReply = stub.distributeKeys(keysRequest)
                 break
             except:
-                print("SOME ERROR OCCURED WHEN ACQUIRING THE KEYS: RECONNECTING")
+                print("SOME ERROR OCCURRED WHEN ACQUIRING THE KEYS: RECONNECTING")
 
         # the received object is a KeysRequest object with one field moved_keys which is an array of SaveRequest objects
         # each containing key and text fields
-        print("new keys")
+        print("RECEIVING THE FOLLOWING NEW KEYS FROM SUCCESSOR")
         print([(SR.key, SR.text) for SR in keysReply.moved_keys])
-
+        print("\n")
         for SR in keysReply.moved_keys:
             self.keys_text[SR.key] = SR.text
 
