@@ -43,7 +43,8 @@ def poll_finger_table_updates(obj: Node, run_event: Event):
             print("CURRENT KEYS: " + "#" * 40)
             print([(key, text, obj.encode_key(key)) for key, text in obj.keys_text.items()])
             print("\n\n")
-
+        else:
+            print("NO KEYS YET!!")
         sleep(SLEEP_TIME)
 
 

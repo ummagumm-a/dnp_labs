@@ -177,15 +177,22 @@ def cli_loop():
     client_connection = ClientConnection()
 
     while True:
-        inp = input("> ")
-        if inp == 'quit':
-            break
-        query, args = parse_input(inp)
-        if query is None:
-            print("Incorrect Query")
-            continue
-        res = eval(f'client_connection.{query}')(*args)
-        print(res)
+        try:
+            inp = input("> ")
+            if inp == 'quit':
+                break
+            query, args = parse_input(inp)
+            if query is None:
+                print("Incorrect Query")
+                continue
+            try:
+                res = eval(f'client_connection.{query}')(*args)
+                print(res)
+            except Exception as e:
+                print(e)
+        except KeyboardInterrupt:
+            print("CLIENT SHUTTING DOWN")
+            sys.exit()
 
 
 if __name__ == '__main__':
