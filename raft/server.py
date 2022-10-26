@@ -28,6 +28,7 @@ class ServerStates:
 class Server(pb2_grpc.RaftServicer):
     def __init__(self, server_id: int, config_path: str):
         self.term = 0
+        self.voted_for = None
         self.server_id = server_id
         self.election_timeout = random.random() * 0.15 + 0.15
         self.previous_reset_time = time.monotonic()
@@ -47,6 +48,31 @@ class Server(pb2_grpc.RaftServicer):
 
     def append_entries(self, request, context):
         self.previous_reset_time = time.monotonic()
+
+    def request_vote(self, request, context):
+        """
+        Candidate server should call this function in order to collect a vote from this server.
+        """
+
+        # update timer because a new message is received
+        self.previous_reset_time = time.monotonic()
+
+        # if term of candidate is greater
+        if self.term < request.term:
+            # update your own term
+            self.term = request.term
+            self.voted_for = None
+            # server becomes a follower
+            self.state = ServerStates.FOLLOWER
+
+        # if server and candidate are in the same term and server didn't yet vote for anyone in this term
+        if self.term == request.term and self.voted_for is None:
+            # server saves info that it voted for this candidate
+            self.voted_for = request.candidate_id
+
+            return pb2.RequestVoteReply(term=self.term, result=True)
+        else:
+            return pb2.RequestVoteReply(term=self.term, result=False)
 
     def shutdown(self):
         self.run_event.clear()
