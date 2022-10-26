@@ -6,6 +6,8 @@ import grpc
 from concurrent import futures
 import raft_pb2 as pb2
 import raft_pb2_grpc as pb2_grpc
+from threading import Thread, Event
+import time
 
 logger = logging.getLogger(__name__)
 formatter = logging.Formatter("%(message)s")
@@ -27,9 +29,27 @@ class Server(pb2_grpc.RaftServicer):
     def __init__(self, server_id: int, config_path: str):
         self.term = 0
         self.server_id = server_id
-        self.election_timeout = random.random()
+        self.election_timeout = random.random() * 0.15 + 0.15
+        self.previous_reset_time = time.monotonic()
         self.servers_info = parse_conf(config_path)
         self.state = ServerStates.FOLLOWER
+        self.run_event = Event()
+        self.run_event.set()
+
+        self.election_loop_thread_handler = Thread(target=self._election_timeout_loop)
+        self.election_loop_thread_handler.start()
+
+    def _election_timeout_loop(self):
+        while self.run_event.is_set():
+            if time.monotonic() - self.previous_reset_time > self.election_timeout:
+                if self.state == ServerStates.FOLLOWER:
+                    self.state = ServerStates.CANDIDATE
+
+    def append_entries(self, request, context):
+        self.previous_reset_time = time.monotonic()
+
+    def shutdown(self):
+        self.run_event.clear()
 
 
 if __name__ == '__main__':
@@ -53,4 +73,5 @@ if __name__ == '__main__':
         grpc_server.wait_for_termination()
     except KeyboardInterrupt:
         logger.info("Shutdown...")
+        server.shutdown()
 
