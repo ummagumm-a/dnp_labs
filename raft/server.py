@@ -44,7 +44,10 @@ class Server(pb2_grpc.RaftServicer):
         while self.run_event.is_set():
             if time.monotonic() - self.previous_reset_time > self.election_timeout:
                 if self.state == ServerStates.FOLLOWER:
+                    self.previous_reset_time = time.monotonic()
                     self.state = ServerStates.CANDIDATE
+                    self.voted_for = self.server_id
+                    self.term += 1
 
     def append_entries(self, request, context):
         self.previous_reset_time = time.monotonic()

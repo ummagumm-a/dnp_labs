@@ -15,6 +15,8 @@ class ServerElectionTimeoutTest(unittest.TestCase):
         self.assertEqual(server.state, ServerStates.FOLLOWER)
         time.sleep(0.21)
         self.assertEqual(server.state, ServerStates.CANDIDATE)
+        self.assertEqual(server.term, 1)
+        self.assertEqual(server.voted_for, 1)
 
         server.shutdown()
 
