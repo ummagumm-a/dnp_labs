@@ -1,0 +1,39 @@
+syntax = 'proto3';
+
+service Raft {
+  rpc request_vote (RequestVoteRequest) returns (RequestVoteReply);
+  rpc append_entries (AppendEntryRequest) returns (AppendEntryReply);
+  rpc get_leader (EmptyMessage) returns (GetLeaderReply);
+  rpc suspend (SuspendRequest) returns (EmptyMessage);
+}
+
+message RequestVoteRequest {
+  uint32 term = 1;
+  uint32 candidate_id = 2;
+}
+
+message RequestVoteReply {
+  uint32 term = 1;
+  bool result = 2;
+}
+
+message AppendEntryRequest {
+  uint32 term = 1;
+  uint32 leader_id = 2;
+}
+
+message AppendEntryReply {
+  uint32 term = 1;
+  bool success = 2;
+}
+
+message EmptyMessage {}
+
+message GetLeaderReply {
+  uint32 leader_id = 1;
+  string leader_address = 2;
+}
+
+message SuspendRequest {
+  uint32 period = 1;
+}
