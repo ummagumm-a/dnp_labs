@@ -30,10 +30,17 @@ message AppendEntryReply {
 message EmptyMessage {}
 
 message GetLeaderReply {
+  oneof pos_answer {
+    GetLeaderPosAnswer leader = 1;
+    EmptyMessage empty_message = 2;
+  }
+}
+
+message GetLeaderPosAnswer {
   uint32 leader_id = 1;
-  string leader_address = 2;
+  string leader_address = 3;
 }
 
 message SuspendRequest {
-  uint32 period = 1;
+  float period = 1;
 }

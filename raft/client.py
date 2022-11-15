@@ -1,6 +1,17 @@
 import raft_pb2_grpc as pb2_grpc
 import raft_pb2 as pb2
 import grpc
+import logging
+import sys
+
+logger = logging.getLogger(__name__)
+formatter = logging.Formatter("%(message)s")
+# log to stdout
+stream_handler = logging.StreamHandler(sys.stdout)
+stream_handler.setFormatter(formatter)
+logger.addHandler(stream_handler)
+
+logger.setLevel(logging.INFO)
 
 
 class ClientConnection:
@@ -14,31 +25,38 @@ class ClientConnection:
         self.stub = pb2_grpc.RaftStub(channel)
 
     def get_leader(self):
+        print('here')
         reply = self.stub.get_leader(pb2.EmptyMessage())
-        return f'{reply.leader_id} {reply.leader_address}'
+        if hasattr(reply, 'leader'):
+            print('has leader', reply.leader.leader_id, reply.leader.leader_address)
+            print(reply.leader)
+            return f'{reply.leader.leader_id} {reply.leader.leader_address}'
+        else:
+            return 'No leader yet'
 
-    def suspend(self, period: int):
+    def suspend(self, period: float):
         _ = self.stub.suspend(pb2.SuspendRequest(period=period))
 
 
 def cli_loop():
+    logger.info("The client starts")
     connection = ClientConnection()
     while True:
         try:
             inp = input("> ")
             if len(inp.split()) == 1:
                 query = inp
-                arg = None
+                args = None
             else:
-                query, arg = inp.split()
+                query, args = inp.split()[0], inp.split()[1:]
 
             if query == 'connect':
-                connection.connect(arg)
+                connection.connect(':'.join(args))
             elif query == 'getleader':
                 resp = connection.get_leader()
                 print(resp)
             elif query == 'suspend':
-                connection.suspend(int(arg))
+                connection.suspend(float(args[0]))
             elif query == 'quit':
                 break
             else:
