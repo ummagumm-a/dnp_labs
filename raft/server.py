@@ -88,7 +88,6 @@ class Server(pb2_grpc.RaftServicer):
         When a node becomes Candidate, it should send 'request_vote' messages to every other node in the system.
 
         """
-        self.term += 1
         # send requests for votes to other nodes
         timeout = max(0.0, self.election_timeout - (time.monotonic() - self.previous_reset_time))
         answers = self.pool.map(self._send_request_for_vote, self.other_addresses, timeout=timeout)
@@ -134,11 +133,11 @@ class Server(pb2_grpc.RaftServicer):
     def _election_timeout_loop(self):
         self.run_event.wait()
         while self.run_event.is_set():
+            time.sleep(max(0.0, self.election_timeout - (time.monotonic() - self.previous_reset_time)))
             self.mutex.acquire()
             # if didn't receive messages for longer than specified timeout
             if time.monotonic() - self.previous_reset_time > self.election_timeout and \
                     self.state == ServerStates.FOLLOWER and \
-                    self.voted_for is None and \
                     not self.is_suspended:
                 logger.debug(f"{self.election_timeout}")
                 # if this node is a follower - become candidate and start election
@@ -147,9 +146,10 @@ class Server(pb2_grpc.RaftServicer):
 
                 # transition to the candidate state
                 self.state = ServerStates.CANDIDATE
+                self.term += 1
                 # vote for yourself
-                self._set_voted_for(self.server_id)
                 logger.info(f"I am a {self._whoami()}. Term: {self.term}")
+                self._set_voted_for(self.server_id)
                 self.previous_reset_time = time.monotonic()
                 # start new election
                 self._start_election()
@@ -282,25 +282,34 @@ class Server(pb2_grpc.RaftServicer):
         If node didn't vote in this term yet - return nothing.
         """
 
+        logger.info("Command from client: getleader")
+
         if self.state == ServerStates.LEADER:
-            return pb2.GetLeaderReply(leader=pb2.GetLeaderPosAnswer(
+            reply = pb2.GetLeaderReply(leader=pb2.GetLeaderPosAnswer(
                     leader_id=self.server_id,
                     leader_address=self.servers_info[self.server_id]
                 ))
         elif self.last_received_message_type == 'append_entries':
             # If there is a leader in the system
-            return pb2.GetLeaderReply(leader=pb2.GetLeaderPosAnswer(
+            reply = pb2.GetLeaderReply(leader=pb2.GetLeaderPosAnswer(
                     leader_id=self.leader_id,
                     leader_address=self.servers_info[self.leader_id]
                 ))
         elif self.last_received_message_type == 'request_vote':
             # That would mean that previous leader has died, so election is in progress
-            return pb2.GetLeaderReply(leader=pb2.GetLeaderPosAnswer(
+            reply = pb2.GetLeaderReply(leader=pb2.GetLeaderPosAnswer(
                     leader_id=self.voted_for,
                     leader_address=self.servers_info[self.voted_for]
                 ))
         else:
-            return pb2.GetLeaderReply(empty_message=pb2.EmptyMessage())
+            reply = pb2.GetLeaderReply(empty_message=pb2.EmptyMessage())
+
+        if hasattr(reply, 'leader'):
+            logger.info(f'{reply.leader.leader_id} {reply.leader.leader_address}')
+        else:
+            logger.info("No leader.")
+
+        return reply
 
     def shutdown(self):
         self.run_event.clear()
@@ -311,16 +320,15 @@ class Server(pb2_grpc.RaftServicer):
         self.voted_for = 0
         self.state = ServerStates.FOLLOWER
         self.election_timeout = random.random() * 0.15 + 0.15
-
-        logger.info(f"I am a {self._whoami()}. Term: {self.term}")
+        self.previous_reset_time = time.monotonic()
 
     def suspend(self, request, context):
+        logger.info(f"Command from client: suspend {request.period}")
         self.is_suspended = True
-        logger.info(f"Suspending for {request.period} seconds")
+        logger.info(f"Sleeping for {request.period} seconds")
         time.sleep(request.period)
         self._reset()
         self.is_suspended = False
-        logger.info("Suspend out")
 
         return pb2.EmptyMessage()
 

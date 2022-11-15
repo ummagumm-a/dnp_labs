@@ -25,11 +25,8 @@ class ClientConnection:
         self.stub = pb2_grpc.RaftStub(channel)
 
     def get_leader(self):
-        print('here')
         reply = self.stub.get_leader(pb2.EmptyMessage())
         if hasattr(reply, 'leader'):
-            print('has leader', reply.leader.leader_id, reply.leader.leader_address)
-            print(reply.leader)
             return f'{reply.leader.leader_id} {reply.leader.leader_address}'
         else:
             return 'No leader yet'
