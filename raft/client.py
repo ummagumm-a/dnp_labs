@@ -34,6 +34,16 @@ class ClientConnection:
     def suspend(self, period: float):
         _ = self.stub.suspend(pb2.SuspendRequest(period=period))
 
+    def setval(self, key: str, value: str):
+        reply = self.stub.setval(pb2.SetValRequest(key=key, value=value))
+
+        return str(reply.is_success)
+
+    def getval(self, key: str):
+        reply = self.stub.getval(pb2.GetValRequest(key=key))
+
+        return str(reply.is_success) + reply.value
+
 
 def cli_loop():
     logger.info("The client starts")
@@ -54,6 +64,9 @@ def cli_loop():
                 print(resp)
             elif query == 'suspend':
                 connection.suspend(float(args[0]))
+            elif query == 'setval':
+                resp = connection.setval(args[0], args[1])
+                print(resp)
             elif query == 'quit':
                 break
             else:
