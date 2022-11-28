@@ -39,7 +39,8 @@ class Server(pb2_grpc.RaftServicer):
         # id of this server
         self.server_id = server_id
         # if this node doesn't receive any message for this period, it turns into the candidate
-        self.election_timeout = random.random() * 0.15 + 0.15
+        self.election_timeout = None
+        self._reset_election_timeout()
         # information about system - ids and addresses of all nodes
         self.servers_info = parse_conf(config_path)
         # state of this node
@@ -72,6 +73,8 @@ class Server(pb2_grpc.RaftServicer):
         self.election_loop_thread_handler.start()
 
         # Run thread which sends heartbeats if this node is a leader
+        self._send_heartbeats_flag = Event()
+        self._send_heartbeats_flag.clear()
         self.heartbeat_if_leader_thread_handler = Timer(2, self._heartbeat_if_leader)
         self.heartbeat_if_leader_thread_handler.start()
 
@@ -83,7 +86,13 @@ class Server(pb2_grpc.RaftServicer):
         # Time period between heartbeats sent by a leader
         self.heartbeat_interval = 0.05
 
+        # Logs. Each entry is of the form: (index, term_number, command)
+        self.log_entries = []
+
         logger.info(f"I am a {self._whoami()}. Term: {self.term}")
+
+    def _reset_election_timeout(self):
+        self.election_timeout = random.uniform(0.15, 0.3)
 
     def _make_stubs(self):
         """
@@ -110,6 +119,34 @@ class Server(pb2_grpc.RaftServicer):
             logger.debug(str(e))
             return 0, 0
 
+    def _become_follower(self):
+        """
+        Turn into a follower and update state accordingly.
+        """
+        self._send_heartbeats_flag.clear()
+        self._reset_election_timeout()
+        self.state = ServerStates.FOLLOWER
+        self.voted_for = None
+        self.previous_reset_time = time.monotonic()
+        logger.info(f"I am a {self._whoami()}. Term: {self.term}")
+
+    def _become_candidate(self):
+        """
+        Turn into a candidate and update state accordingly.
+        """
+        self.state = ServerStates.CANDIDATE
+        self.term += 1
+        # vote for yourself
+        self._set_voted_for(self.server_id)
+        self.previous_reset_time = time.monotonic()
+        logger.info(f"I am a {self._whoami()}. Term: {self.term}")
+
+    def _become_leader(self):
+        self.previous_reset_time = time.monotonic()
+        self.state = ServerStates.LEADER
+        self._send_heartbeats_flag.set()
+        logger.info(f"I am a {self._whoami()}. Term: {self.term}")
+
     def _start_election(self):
         """
         When a node becomes Candidate, it should send 'request_vote' messages to every other node in the system.
@@ -128,6 +165,7 @@ class Server(pb2_grpc.RaftServicer):
             for term, ans in answers:
                 # if there is a node with term number higher than this node's
                 if term > self.term:
+                    self.term = term
                     break
                 pos_answers += ans
 
@@ -135,9 +173,7 @@ class Server(pb2_grpc.RaftServicer):
                 if pos_answers == len(self.servers_info) // 2:
                     # reset timer and turn into a leader
                     logger.info("Votes received")
-                    self.previous_reset_time = time.monotonic()
-                    self.state = ServerStates.LEADER
-                    logger.info(f"I am a {self._whoami()}. Term: {self.term}")
+                    self._become_leader()
                     logger.debug('return')
                     return
         except futures._base.TimeoutError:
@@ -146,12 +182,7 @@ class Server(pb2_grpc.RaftServicer):
         # turn into a follower and reset state
         logger.info("Votes received")
         logger.debug("Candidate to follower")
-        self.election_timeout = random.random() * 0.15 + 0.15
-        self.state = ServerStates.FOLLOWER
-        self.voted_for = None
-        self.previous_reset_time = time.monotonic()
-
-        logger.info(f"I am a {self._whoami()}. Term: {self.term}")
+        self._become_follower()
 
     def _whoami(self):
         """
@@ -180,30 +211,24 @@ class Server(pb2_grpc.RaftServicer):
         while self.run_event.is_set():
             # sleep while you still in time
             time.sleep(max(0.0, self.election_timeout - (time.monotonic() - self.previous_reset_time)))
-            self.mutex.acquire()
             # if didn't receive messages for longer than specified timeout,
             # (note that a message can come while you were sleeping, so you still need to check for timeout)
             # you are a follower and not suspended
             if time.monotonic() - self.previous_reset_time > self.election_timeout and \
                     self.state == ServerStates.FOLLOWER and \
                     not self.is_suspended:
+                self.mutex.acquire()
                 logger.debug(f"{self.election_timeout}")
                 # if this node is a follower - become candidate and start election
                 logger.info(f"The leader is dead.")
                 logger.debug(f"Follower to candidate, term: {self.term}")
 
-                # transition to the candidate state
-                self.state = ServerStates.CANDIDATE
-                self.term += 1
-                # vote for yourself
-                logger.info(f"I am a {self._whoami()}. Term: {self.term}")
-                self._set_voted_for(self.server_id)
-                self.previous_reset_time = time.monotonic()
+                self._become_candidate()
                 # start new election
                 self._start_election()
                 logger.debug(f"Time left: {time.monotonic() - self.previous_reset_time}")
 
-            self.mutex.release()
+                self.mutex.release()
 
     def _heartbeat_if_leader(self):
         """
@@ -212,9 +237,11 @@ class Server(pb2_grpc.RaftServicer):
         # Don't start until server is started
         self.run_event.wait()
         while self.run_event.is_set():
+            # wait until you can start to send heartbeats
+            self._send_heartbeats_flag.wait(timeout=1.0)
             # If server is a Leader
-            self.mutex.acquire()
             if self.state == ServerStates.LEADER and not self.is_suspended:
+                self.mutex.acquire()
                 # Create heartbeat message
                 request = pb2.AppendEntryRequest(term=self.term, leader_id=self.server_id)
                 logger.debug(f"voted for: {self.voted_for}, term: {self.term}")
@@ -237,21 +264,27 @@ class Server(pb2_grpc.RaftServicer):
                         return True, 0
 
                 # Send messages to other nodes
+                # start_time = time.monotonic()
+
                 replies = self.pool.map(helper, self.other_addresses)
                 # collect replies
                 for success, reply_term in replies:
                     # If leader receives a term number that is greater than its own - turn into a follower
                     if not success or reply_term > self.term:
                         self.term = reply_term
-                        self.state = ServerStates.FOLLOWER
-                        self.voted_for = None
-                        logger.info(f"I am a {self._whoami()}. Term: {self.term}")
-                        self.previous_reset_time = time.monotonic()
+                        logger.debug("become follower in heartbeat")
+                        self._become_follower()
                         break
 
+                # time_passed = time.monotonic() - start_time
+                # if time_passed > 0.05:
+                #     print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!: ", time_passed)
+                # else:
+                #     print("Time: ", time_passed)
+
                 # Every 'heartbeat interval' seconds
+                self.mutex.release()
                 time.sleep(self.heartbeat_interval)
-            self.mutex.release()
 
     def append_entries(self, request, context):
         """
@@ -260,6 +293,9 @@ class Server(pb2_grpc.RaftServicer):
         start_time = time.monotonic()
         logger.debug("heartbeat start")
         self.mutex.acquire()
+        # update time of last received message and its type
+        self.previous_reset_time = time.monotonic()
+        self.last_received_message_type = 'append_entries'
         # if this node is suspended - return an error
         if self.is_suspended:
             logger.debug("return error")
@@ -275,18 +311,14 @@ class Server(pb2_grpc.RaftServicer):
         # if heartbeat came with term number greater than its own - turn into a follower
         elif self.term < request.term:
             self.term = request.term
-            self.state = ServerStates.FOLLOWER
-            self.voted_for = None
             self.leader_id = request.leader_id
-            logger.info(f"I am a {self._whoami()}. Term: {self.term}")
+            logger.debug("become follower in append_entries")
+            self._become_follower()
             reply = pb2.AppendEntryReply(term=self.term, success=True)
         # if the same term - just acknowledge the heartbeat
         else:
+            self.leader_id = request.leader_id
             reply = pb2.AppendEntryReply(term=self.term, success=True)
-
-        # update time of last received message and its type
-        self.previous_reset_time = time.monotonic()
-        self.last_received_message_type = 'append_entries'
 
         self.mutex.release()
         return reply
@@ -315,10 +347,10 @@ class Server(pb2_grpc.RaftServicer):
             # update your own term
             self.term = request.term
             # server becomes a follower
-            self.state = ServerStates.FOLLOWER
+            logger.debug("become follower in request_vote")
+            self._become_follower()
 
             self._set_voted_for(request.candidate_id)
-            logger.info(f"I am a {self._whoami()}. Term: {self.term}")
 
             # send positive answer
             reply = pb2.RequestVoteReply(term=self.term, result=True)
@@ -388,10 +420,9 @@ class Server(pb2_grpc.RaftServicer):
         Reset server state
         """
         self.term = 0
-        self.voted_for = 0
-        self.state = ServerStates.FOLLOWER
-        self.election_timeout = random.random() * 0.15 + 0.15
-        self.previous_reset_time = time.monotonic()
+        self.leader_id = None
+        logger.debug("become follower in reset")
+        self._become_follower()
 
     def suspend(self, request, context):
         """
@@ -405,6 +436,28 @@ class Server(pb2_grpc.RaftServicer):
         self.is_suspended = False
 
         return pb2.EmptyMessage()
+
+    def setval(self, request, context):
+        if self.state == ServerStates.FOLLOWER:
+            # If this is a follower - redirect the request to the leader
+            return self.stubs[self.servers_info[self.leader_id]].setval(request)
+        elif self.state == ServerStates.CANDIDATE:
+            # If this is a candidate - return negative reply. It cannot do anything yet.
+            # TODO: block until a leader is elected
+            return pb2.SetValReply(is_success=False)
+        elif self.state == ServerStates.LEADER:
+            self.log_entries.append((len(self.log_entries), self.term, f'{request.key}={request.value}'))
+            return pb2.SetValReply(is_success=True)
+
+    def getval(self, request, context):
+        logger.info(f'{self.log_entries}')
+        for i, term_number, entry in self.log_entries:
+            if '=' in entry:
+                key, value = entry.split('=')
+                if key == request.key:
+                    return pb2.GetValReply(value=value, is_success=True)
+        else:
+            return pb2.GetValReply(value='', is_success=False)
 
 
 def which_address(config_path, server_id):

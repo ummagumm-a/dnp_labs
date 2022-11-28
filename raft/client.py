@@ -42,7 +42,7 @@ class ClientConnection:
     def getval(self, key: str):
         reply = self.stub.getval(pb2.GetValRequest(key=key))
 
-        return str(reply.is_success) + reply.value
+        return str(reply.is_success) + ' ' + reply.value
 
 
 def cli_loop():
