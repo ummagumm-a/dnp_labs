@@ -88,6 +88,9 @@ class Server(pb2_grpc.RaftServicer):
 
         # Logs. Each entry is of the form: (index, term_number, command)
         self.log_entries = []
+        self.prev_log_index = 0
+        self.prev_log_term = 0
+        self.commit_index = 0
 
         logger.info(f"I am a {self._whoami()}. Term: {self.term}")
 
@@ -264,8 +267,6 @@ class Server(pb2_grpc.RaftServicer):
                         return True, 0
 
                 # Send messages to other nodes
-                # start_time = time.monotonic()
-
                 replies = self.pool.map(helper, self.other_addresses)
                 # collect replies
                 for success, reply_term in replies:
@@ -275,12 +276,6 @@ class Server(pb2_grpc.RaftServicer):
                         logger.debug("become follower in heartbeat")
                         self._become_follower()
                         break
-
-                # time_passed = time.monotonic() - start_time
-                # if time_passed > 0.05:
-                #     print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!: ", time_passed)
-                # else:
-                #     print("Time: ", time_passed)
 
                 # Every 'heartbeat interval' seconds
                 self.mutex.release()
@@ -437,6 +432,31 @@ class Server(pb2_grpc.RaftServicer):
 
         return pb2.EmptyMessage()
 
+    def _broadcast_request(self, request_function):
+        def helper(address: str):
+            try:
+                logger.debug(f'Sending heartbeat message to {address}')
+                reply = request_function(self.stubs[address])
+                logger.debug(f'Sent heartbeat message to {address}')
+                logger.debug(str(reply))
+
+                return reply
+            except grpc._channel._InactiveRpcError or grpc.RpcError:
+                logger.debug('loh')
+                return
+
+        return self.pool.map(helper, self.other_addresses)
+
+    def _notify_followers_about_log(self, log_request):
+        append_entry_request = pb2.AppendEntryRequest(term=self.term,
+                                                      leader_id=self.leader_id,
+                                                      prev_log_index=self.prev_log_index,
+                                                      prev_log_term=self.prev_log_term,
+                                                      entries=[log_request],
+                                                      leader_commit_index=self.commit_index)
+
+        return self._broadcast_request(lambda stub: stub.append_entries(append_entry_request))
+
     def setval(self, request, context):
         if self.state == ServerStates.FOLLOWER:
             # If this is a follower - redirect the request to the leader
@@ -446,6 +466,7 @@ class Server(pb2_grpc.RaftServicer):
             # TODO: block until a leader is elected
             return pb2.SetValReply(is_success=False)
         elif self.state == ServerStates.LEADER:
+            replies = self._notify_followers_about_log(request)
             self.log_entries.append((len(self.log_entries), self.term, f'{request.key}={request.value}'))
             return pb2.SetValReply(is_success=True)
 

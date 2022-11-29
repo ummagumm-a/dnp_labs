@@ -35,7 +35,7 @@ class ClientConnection:
         _ = self.stub.suspend(pb2.SuspendRequest(period=period))
 
     def setval(self, key: str, value: str):
-        reply = self.stub.setval(pb2.SetValRequest(key=key, value=value))
+        reply = self.stub.setval(pb2.LogEntry(key=key, value=value))
 
         return str(reply.is_success)
 
