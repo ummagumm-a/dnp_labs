@@ -5,7 +5,7 @@ service Raft {
   rpc append_entries (AppendEntryRequest) returns (AppendEntryReply);
   rpc get_leader (EmptyMessage) returns (GetLeaderReply);
   rpc suspend (SuspendRequest) returns (EmptyMessage);
-  rpc setval (LogEntry) returns (SetValReply);
+  rpc setval (Log) returns (SetValReply);
   rpc getval (GetValRequest) returns (GetValReply);
 }
 
@@ -24,8 +24,9 @@ message AppendEntryRequest {
   uint32 leader_id = 2;
   uint32 prev_log_index = 3;
   uint32 prev_log_term = 4;
-  repeated LogEntry entries = 5;
+  LogEntry log_entry = 5;
   uint32 leader_commit_index = 6;
+  bool has_entry = 7;
 }
 
 message AppendEntryReply {
@@ -52,6 +53,12 @@ message SuspendRequest {
 }
 
 message LogEntry {
+  uint32 index = 1;
+  uint32 term = 2;
+  string log = 3;
+}
+
+message Log {
   string key = 1;
   string value = 2;
 }

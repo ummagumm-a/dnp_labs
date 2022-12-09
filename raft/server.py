@@ -1,3 +1,4 @@
+import collections
 import random
 from utils import parse_conf
 import sys
@@ -28,6 +29,9 @@ class ServerStates:
     FOLLOWER = 1
     CANDIDATE = 2
     LEADER = 3
+
+
+LogEntry = collections.namedtuple("LogEntry", ['index', 'term', 'log'])
 
 
 class Server(pb2_grpc.RaftServicer):
@@ -88,9 +92,10 @@ class Server(pb2_grpc.RaftServicer):
 
         # Logs. Each entry is of the form: (index, term_number, command)
         self.log_entries = []
-        self.prev_log_index = 0
-        self.prev_log_term = 0
         self.commit_index = 0
+        self.next_index = { address: 0 for address in self.other_addresses }
+        self.match_index = { address: 0 for address in self.other_addresses }
+        self.committed_events = {}
 
         logger.info(f"I am a {self._whoami()}. Term: {self.term}")
 
@@ -233,6 +238,79 @@ class Server(pb2_grpc.RaftServicer):
 
                 self.mutex.release()
 
+    def _create_append_entry_request(self, address):
+        # If there are unsent logs
+        if self._prev_log_index(len(self.log_entries)) > self.next_index[address]:
+            log_to_send = self.log_entries[self.next_index[address]]
+        else:
+            log_to_send = None
+        # logs_to_send = items_at_indices(self.log_entries, self.next_index[address])
+
+        append_entry_request = pb2.AppendEntryRequest(term=self.term,
+                                                      leader_id=self.server_id,
+                                                      prev_log_index=self._prev_log_index(self.next_index[address]),
+                                                      prev_log_term=self._prev_log_term(self.next_index[address]),
+                                                      log_entry=log_to_send,
+                                                      leader_commit_index=self.commit_index,
+                                                      has_entry=log_to_send is not None)
+
+        return append_entry_request
+
+    def _collect_heartbeat_replies(self, replies):
+        for success, reply_term, address in replies:
+            # If leader receives a term number that is greater than its own - turn into a follower
+            if not success or reply_term > self.term:
+                logger.debug("Process heartbeat replies; if")
+                self.term = reply_term
+                logger.debug("become follower in heartbeat")
+                self._become_follower()
+                break
+            else:
+                logger.debug(f"Process heartbeat replies; else {self.next_index[address]}, "
+                             f"{self._prev_log_index(len(self.log_entries))}")
+                if self._prev_log_index(len(self.log_entries)) != 0 \
+                        and self.next_index[address] < self._prev_log_index(len(self.log_entries)):
+                    self.next_index[address] += 1
+                    self.match_index[address] += 1
+
+    def _commit_approved_by_majority(self) -> None:
+        sorted_match_indices = sorted(self.match_index.values())
+        logger.debug(f'{sorted_match_indices}')
+        # If number of other servers is even - mid should point to left border of the middle
+        # If number of other servers is odd - mid should point to the right border of the middle
+        mid = len(self.match_index) // 2 - (1 - len(self.match_index) % 2)
+        next_commit = sorted_match_indices[mid]
+        logger.debug(f'mid: {mid}, next_commit: {next_commit}')
+        if next_commit > self.commit_index and self.log_entries[next_commit - 1].term == self.term:
+            logger.debug(f"Committed new index: {next_commit}")
+            for i in range(self.commit_index + 1, next_commit + 1):
+                self.committed_events[i].set()
+            self.commit_index = next_commit
+
+    def _send_heartbeat_to(self, address):
+        """
+        This function sends a heartbeat to 'address' and processes the result, catches errors from malfunctioning
+        servers.
+
+        :param address: address of a node to which a heartbeat should be sent.
+        """
+        try:
+            logger.debug(f'Sending heartbeat message to {address}')
+            request = self._create_append_entry_request(address)
+            logger.debug(f'Created request: {request}')
+            reply = self.stubs[address].append_entries(request, timeout=self.heartbeat_interval)
+            logger.debug(f'Sent heartbeat message to {address}')
+            logger.debug(str(reply))
+
+            return reply.success, reply.term, address
+        except grpc._channel._InactiveRpcError:
+            logger.debug('loh')
+            return True, 0, address
+        except grpc.RpcError as e:
+            logger.debug('dksjflsekj')
+            logger.debug(str(e))
+            return True, 0, address
+
     def _heartbeat_if_leader(self):
         """
         A function that sends heartbeat messages if this node is a leader. Should run in a separate thread.
@@ -245,78 +323,88 @@ class Server(pb2_grpc.RaftServicer):
             # If server is a Leader
             if self.state == ServerStates.LEADER and not self.is_suspended:
                 self.mutex.acquire()
-                # Create heartbeat message
-                request = pb2.AppendEntryRequest(term=self.term, leader_id=self.server_id)
-                logger.debug(f"voted for: {self.voted_for}, term: {self.term}")
-
-                # function that sends heartbeat message to node at 'address'
-                def helper(address):
-                    try:
-                        logger.debug(f'Sending heartbeat message to {address}')
-                        reply = self.stubs[address].append_entries(request, timeout=self.heartbeat_interval)
-                        logger.debug(f'Sent heartbeat message to {address}')
-                        logger.debug(str(reply))
-
-                        return reply.success, reply.term
-                    except grpc._channel._InactiveRpcError:
-                        logger.debug('loh')
-                        return True, 0
-                    except grpc.RpcError as e:
-                        logger.debug('dksjflsekj')
-                        logger.debug(str(e))
-                        return True, 0
 
                 # Send messages to other nodes
-                replies = self.pool.map(helper, self.other_addresses)
-                # collect replies
-                for success, reply_term in replies:
-                    # If leader receives a term number that is greater than its own - turn into a follower
-                    if not success or reply_term > self.term:
-                        self.term = reply_term
-                        logger.debug("become follower in heartbeat")
-                        self._become_follower()
-                        break
+                replies = self.pool.map(self._send_heartbeat_to, self.other_addresses)
+                # Collect replies and check for errors
+                self._collect_heartbeat_replies(replies)
+                # Check whether server needs to commit an entry
+                self._commit_approved_by_majority()
 
                 # Every 'heartbeat interval' seconds
                 self.mutex.release()
                 time.sleep(self.heartbeat_interval)
 
+    def _process_heartbeat(self, request, _):
+        # if heartbeat came with term number greater than its own - turn into a follower
+        if self.term < request.term:
+            self.term = request.term
+            self.leader_id = request.leader_id
+            self._become_follower()
+            return True
+        # if the same term - just acknowledge the heartbeat
+        else:
+            self.leader_id = request.leader_id
+            return True
+
+    def _process_logs(self, request, _) -> bool:
+        # Check that log at the index specified in the request contains the same term number.
+        # If no, then there is inconsistency in logs and log at that index (and all consequent) should be deleted.
+        logger.debug(f"In process logs. Request: {request}")
+        if len(self.log_entries) != 0 and request.prev_log_index > 0 \
+                and self.log_entries[request.prev_log_index - 1].term != request.term:
+            logger.debug(f"Log entry. Terms are not equal: {self.log_entries[request.prev_log_index - 1].term}, "
+                         f"{request.term}")
+            self.log_entries = self.log_entries[:request.prev_log_index - 1]
+
+        logger.debug(f"{request.prev_log_index}, {self._prev_log_index(len(self.log_entries))};"
+                     f"{request.prev_log_term}, {self._prev_log_term(len(self.log_entries))}")
+        if request.prev_log_index == self._prev_log_index(len(self.log_entries)) \
+                and request.prev_log_term == self._prev_log_term(len(self.log_entries)):
+            self.log_entries.append(request.log_entry)
+            # success = self._append_log_entries(request.entries, request.leader_commit_index)
+            return True
+        else:
+            return False
+
     def append_entries(self, request, context):
         """
         Function that receives heartbeat messages.
         """
-        start_time = time.monotonic()
-        logger.debug("heartbeat start")
+
         self.mutex.acquire()
         # update time of last received message and its type
         self.previous_reset_time = time.monotonic()
         self.last_received_message_type = 'append_entries'
+
         # if this node is suspended - return an error
         if self.is_suspended:
             logger.debug("return error")
             self.mutex.release()
             context.abort(grpc.StatusCode.UNAVAILABLE, 'I am suspended.')
 
-        logger.debug(f"heartbeat: {time.monotonic() - start_time}")
-        logger.debug(str(request))
+        # If request comes from server with lower term number -
+        # it is an outdated leader, return False.
+        if request.term < self.term:
+            self.mutex.release()
+            return pb2.AppendEntryReply(term=self.term, success=False)
 
-        # if heartbeat came with term number less than its own - send negative reply
-        if self.term > request.term:
-            reply = pb2.AppendEntryReply(term=self.term, success=False)
-        # if heartbeat came with term number greater than its own - turn into a follower
-        elif self.term < request.term:
-            self.term = request.term
-            self.leader_id = request.leader_id
-            logger.debug("become follower in append_entries")
-            self._become_follower()
-            reply = pb2.AppendEntryReply(term=self.term, success=True)
-        # if the same term - just acknowledge the heartbeat
+        # First, process the request as heartbeat
+        heartbeats_reply = self._process_heartbeat(request, context)
+        # Then, if the request carries a log - process the log
+        if request.has_entry:
+            logs_reply = self._process_logs(request, context)
         else:
-            self.leader_id = request.leader_id
-            reply = pb2.AppendEntryReply(term=self.term, success=True)
+            logs_reply = True
+
+        # Set commit_index the same as leader's
+        self.commit_index = request.leader_commit_index
 
         self.mutex.release()
-        return reply
+
+        logger.debug(f"In append entries. Replies: {heartbeats_reply}, {logs_reply}.")
+
+        return pb2.AppendEntryReply(term=self.term, success=heartbeats_reply and logs_reply)
 
     def request_vote(self, request, context):
         """
@@ -328,9 +416,6 @@ class Server(pb2_grpc.RaftServicer):
             logger.debug("return error")
             self.mutex.release()
             context.abort(grpc.StatusCode.UNAVAILABLE, 'I am suspended.')
-        """
-        Candidate server should call this function in order to collect a vote from this server.
-        """
         logger.debug("request_vote")
         logger.debug(str(request))
         # update timer because a new message is received
@@ -377,21 +462,21 @@ class Server(pb2_grpc.RaftServicer):
         # if this node is a leader
         if self.state == ServerStates.LEADER:
             reply = pb2.GetLeaderReply(leader=pb2.GetLeaderPosAnswer(
-                    leader_id=self.server_id,
-                    leader_address=self.servers_info[self.server_id]
-                ))
+                leader_id=self.server_id,
+                leader_address=self.servers_info[self.server_id]
+            ))
         # if there is a living leader in the system
         elif self.last_received_message_type == 'append_entries':
             reply = pb2.GetLeaderReply(leader=pb2.GetLeaderPosAnswer(
-                    leader_id=self.leader_id,
-                    leader_address=self.servers_info[self.leader_id]
-                ))
+                leader_id=self.leader_id,
+                leader_address=self.servers_info[self.leader_id]
+            ))
         # That would mean that previous leader has died, so election is in progress
         elif self.last_received_message_type == 'request_vote':
             reply = pb2.GetLeaderReply(leader=pb2.GetLeaderPosAnswer(
-                    leader_id=self.voted_for,
-                    leader_address=self.servers_info[self.voted_for]
-                ))
+                leader_id=self.voted_for,
+                leader_address=self.servers_info[self.voted_for]
+            ))
         else:
             reply = pb2.GetLeaderReply(empty_message=pb2.EmptyMessage())
 
@@ -441,21 +526,36 @@ class Server(pb2_grpc.RaftServicer):
                 logger.debug(str(reply))
 
                 return reply
-            except grpc._channel._InactiveRpcError or grpc.RpcError:
-                logger.debug('loh')
+            except grpc._channel._InactiveRpcError or grpc.RpcError as e:
+                logger.info(str(e))
                 return
 
         return self.pool.map(helper, self.other_addresses)
 
-    def _notify_followers_about_log(self, log_request):
-        append_entry_request = pb2.AppendEntryRequest(term=self.term,
-                                                      leader_id=self.leader_id,
-                                                      prev_log_index=self.prev_log_index,
-                                                      prev_log_term=self.prev_log_term,
-                                                      entries=[log_request],
-                                                      leader_commit_index=self.commit_index)
+    def _prev_log_index(self, index):
+        return self.log_entries[index - 1].index if index > 0 else 0
 
-        return self._broadcast_request(lambda stub: stub.append_entries(append_entry_request))
+    def _prev_log_term(self, index):
+        return self.log_entries[index - 1].term if index > 0 else 0
+
+    # def _notify_followers_about_log(self, log_requests):
+    #     append_entry_request = pb2.AppendEntryRequest(term=self.term,
+    #                                                   leader_id=self.leader_id,
+    #                                                   prev_log_index=self._prev_log_index(),
+    #                                                   prev_log_term=self._prev_log_term(),
+    #                                                   entries=log_requests,
+    #                                                   leader_commit_index=self.commit_index)
+    #
+    #     return self._broadcast_request(lambda stub: stub.append_entries(append_entry_request))
+
+    def _commit_if_majority_acknowledged(self, replies):
+        num_pos_acks = 0
+        for reply in replies:
+            num_pos_acks += int(reply.success)
+
+            if num_pos_acks == len(self.other_addresses) // 2:
+                self.leader_commit_index = len(self.log_entries)
+                break
 
     def setval(self, request, context):
         if self.state == ServerStates.FOLLOWER:
@@ -466,15 +566,28 @@ class Server(pb2_grpc.RaftServicer):
             # TODO: block until a leader is elected
             return pb2.SetValReply(is_success=False)
         elif self.state == ServerStates.LEADER:
-            replies = self._notify_followers_about_log(request)
-            self.log_entries.append((len(self.log_entries), self.term, f'{request.key}={request.value}'))
+            # Append new log to list of logs.
+            index = self._prev_log_index(len(self.log_entries)) + 1
+            self.log_entries.append(pb2.LogEntry(index=index,
+                                                 term=self.term,
+                                                 log=f"{request.key}={request.value}"
+                                                 ))
+
+            # Wait until log is replicated and committed.
+            print('before wait')
+            self.committed_events[index] = Event()
+            self.committed_events[index].wait()
+            print('after wait')
+
             return pb2.SetValReply(is_success=True)
+        else:
+            raise Exception("Unexpected state.")
 
     def getval(self, request, context):
         logger.info(f'{self.log_entries}')
-        for i, term_number, entry in self.log_entries:
-            if '=' in entry:
-                key, value = entry.split('=')
+        for log_entry in self.log_entries:
+            if '=' in log_entry.log:
+                key, value = log_entry.log.split('=')
                 if key == request.key:
                     return pb2.GetValReply(value=value, is_success=True)
         else:
