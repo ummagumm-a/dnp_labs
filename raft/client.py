@@ -3,6 +3,7 @@ import raft_pb2 as pb2
 import grpc
 import logging
 import sys
+from threading import Thread
 
 logger = logging.getLogger(__name__)
 formatter = logging.Formatter("%(message)s")
@@ -41,8 +42,10 @@ class ClientConnection:
 
     def getval(self, key: str):
         reply = self.stub.getval(pb2.GetValRequest(key=key))
-
-        return str(reply.is_success) + ' ' + reply.value
+        if reply.is_success:
+            return reply.value
+        else:
+            return 'None'
 
 
 def cli_loop():
@@ -65,8 +68,10 @@ def cli_loop():
             elif query == 'suspend':
                 connection.suspend(float(args[0]))
             elif query == 'setval':
-                resp = connection.setval(args[0], args[1])
-                print(resp)
+                _ = Thread(target=lambda connection, args: connection.setval(args[0], args[1]),
+                           args=(connection, args)).start()
+                # resp = connection.setval(args[0], args[1])
+                # print(resp)
             elif query == 'getval':
                 resp = connection.getval(args[0])
                 print(resp)

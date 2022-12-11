@@ -10,6 +10,7 @@ import raft_pb2 as pb2
 import raft_pb2_grpc as pb2_grpc
 from threading import Event, Lock, Timer
 import time
+import enum
 
 # For everything to work more-or-less okay I changed 1392'th line in _channel (0.2 -> 0.05)
 
@@ -22,10 +23,10 @@ stream_handler = logging.StreamHandler(sys.stdout)
 stream_handler.setFormatter(formatter)
 logger.addHandler(stream_handler)
 
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 
-class ServerStates:
+class ServerStates(enum.Enum):
     """
     Server can be in one of these states.
     """
@@ -56,6 +57,8 @@ class Server(pb2_grpc.RaftServicer):
         self.state = ServerStates.FOLLOWER
         # This thread pool for sending messages to all other nodes.
         self.pool = ThreadPoolExecutor(max_workers=len(self.servers_info))
+        for _ in range(len(self.servers_info) - 1):
+            thread_pool.submit(lambda: time.sleep(0.5))
         # id of leader in the system
         self.leader_id = None
         # This field is required to know whether a leader is alive or there is an election in progress.
@@ -82,8 +85,8 @@ class Server(pb2_grpc.RaftServicer):
         # Logs. Each entry is of the form: (index, term_number, command)
         self.log_entries = []
         self.commit_index = 0
-        self.next_index = { address: 0 for address in self.other_addresses }
-        self.match_index = { address: 0 for address in self.other_addresses }
+        self.next_index = {address: len(self.log_entries) + 1 for address in self.other_addresses}
+        self.match_index = {address: 0 for address in self.other_addresses}
         self.committed_events = {}
 
         logger.info(f"I am a {self._whoami()}. Term: {self.term}")
@@ -112,6 +115,7 @@ class Server(pb2_grpc.RaftServicer):
         """
         Create stubs to all other nodes in the system.
         """
+
         def helper(address: str) -> SavedStub:
             channel = grpc.insecure_channel(address)
             stub = pb2_grpc.RaftStub(channel)
@@ -126,7 +130,11 @@ class Server(pb2_grpc.RaftServicer):
         Send a request for vote to a node located at 'address'.
         """
         try:
-            request = pb2.RequestVoteRequest(term=self.term, candidate_id=self.server_id)
+            request = pb2.RequestVoteRequest(term=self.term, candidate_id=self.server_id,
+                                             last_log_index=self.log_entries[-1].index
+                                                            if len(self.log_entries) > 0 else 0,
+                                             last_log_term=self.log_entries[-1].term
+                                                           if len(self.log_entries) > 0 else 0)
             reply = self.stubs[address].stub.request_vote(request)
             logger.debug(reply)
 
@@ -155,13 +163,15 @@ class Server(pb2_grpc.RaftServicer):
         """
         self.state = ServerStates.CANDIDATE
         self.term += 1
-        # vote for yourself
-        self._set_voted_for(self.server_id)
         self.previous_reset_time = time.monotonic()
         logger.info(f"I am a {self._whoami()}. Term: {self.term}")
+        # vote for yourself
+        self._set_voted_for(self.server_id)
 
     def _become_leader(self):
         self.previous_reset_time = time.monotonic()
+        self.next_index = {address: len(self.log_entries) + 1 for address in self.other_addresses}
+        self.match_index = {address: 0 for address in self.other_addresses}
         self.state = ServerStates.LEADER
         self._send_heartbeats_flag.set()
         logger.info(f"I am a {self._whoami()}. Term: {self.term}")
@@ -184,7 +194,8 @@ class Server(pb2_grpc.RaftServicer):
             for term, ans in answers:
                 # if there is a node with term number higher than this node's
                 if term > self.term:
-                    self.term = term
+                    # self.term = term
+                    # self.term -= 1
                     break
                 pos_answers += ans
 
@@ -250,15 +261,22 @@ class Server(pb2_grpc.RaftServicer):
 
     def _create_append_entry_request(self, address):
         # If there are unsent logs
-        if self._prev_log_index(len(self.log_entries)) > self.next_index[address]:
-            log_to_send = self.log_entries[self.next_index[address]]
+        logger.debug(f"create append entry request {self._prev_log_index(len(self.log_entries))} "
+                     f"{self.next_index[address]} {self.match_index[address]}")
+
+        if len(self.log_entries) >= self.next_index[address]:
+            log_to_send = self.log_entries[self.next_index[address] - 1]
+            prev_log_index = self.next_index[address] - 1
+            prev_log_term = self.log_entries[self.next_index[address] - 2].term if self.next_index[address] >= 2 else 0
         else:
             log_to_send = None
+            prev_log_index = 0
+            prev_log_term = 0
 
         append_entry_request = pb2.AppendEntryRequest(term=self.term,
                                                       leader_id=self.server_id,
-                                                      prev_log_index=self._prev_log_index(self.next_index[address]),
-                                                      prev_log_term=self._prev_log_term(self.next_index[address]),
+                                                      prev_log_index=prev_log_index,
+                                                      prev_log_term=prev_log_term,
                                                       log_entry=log_to_send,
                                                       leader_commit_index=self.commit_index,
                                                       has_entry=log_to_send is not None)
@@ -267,8 +285,13 @@ class Server(pb2_grpc.RaftServicer):
 
     def _collect_heartbeat_replies(self, replies):
         for success, reply_term, address in replies:
+            # That would indicate that there are problems with other server
+            # which have nothing to do with heartbeats or logs,
+            # i.e. it is inaccessible or has an error.
+            if not success and reply_term == -1:
+                continue
             # If leader receives a term number that is greater than its own - turn into a follower
-            if not success or reply_term > self.term:
+            if reply_term > self.term:
                 logger.debug("Process heartbeat replies; if")
                 self.term = reply_term
                 logger.debug("become follower in heartbeat")
@@ -277,22 +300,27 @@ class Server(pb2_grpc.RaftServicer):
             else:
                 logger.debug(f"Process heartbeat replies; else {self.next_index[address]}, "
                              f"{self._prev_log_index(len(self.log_entries))}")
-                if self._prev_log_index(len(self.log_entries)) != 0 \
-                        and self.next_index[address] < self._prev_log_index(len(self.log_entries)):
-                    self.next_index[address] += 1
-                    self.match_index[address] += 1
+                if len(self.log_entries) >= self.next_index[address]:
+                    if success:
+                        logger.debug("Reply success")
+                        self.match_index[address] = self.next_index[address]
+                        self.next_index[address] += 1
+                    else:
+                        logger.debug("Reply not success")
+                        self.next_index[address] -= 1
 
     def _commit_approved_by_majority(self) -> None:
         sorted_match_indices = sorted(self.match_index.values())
         logger.debug(f'{sorted_match_indices}')
         # If number of other servers is even - mid should point to left border of the middle
         # If number of other servers is odd - mid should point to the right border of the middle
-        mid = len(self.match_index) // 2 - (1 - len(self.match_index) % 2)
+        mid = len(self.match_index) // 2  # - (1 - len(self.match_index) % 2)
         next_commit = sorted_match_indices[mid]
-        logger.debug(f'mid: {mid}, next_commit: {next_commit}')
+        logger.debug(f'mid: {mid}, next_commit: {next_commit}, self.commit_index: {self.commit_index}')
         if next_commit > self.commit_index and self.log_entries[next_commit - 1].term == self.term:
             logger.debug(f"Committed new index: {next_commit}")
             for i in range(self.commit_index + 1, next_commit + 1):
+
                 self.committed_events[i].set()
             self.commit_index = next_commit
 
@@ -309,10 +337,8 @@ class Server(pb2_grpc.RaftServicer):
         # TODO: check timeout. Problem with starting servers may be here.
         start_time = time.monotonic()
         try:
-            # channel = grpc.insecure_channel(address)
-            # stub = pb2_grpc.RaftStub(channel)
-            # self.stubs[address] = SavedStub(channel, stub)
-            print(self.stubs[address].channel._connectivity_state.connectivity)
+            # logger.debug(f"Connectivity to {address} "
+            #              f"is {self.stubs[address].channel._connectivity_state.connectivity}")
             grpc.channel_ready_future(self.stubs[address].channel).result(self.heartbeat_interval)
             reply = self.stubs[address].stub.append_entries(request, self.heartbeat_interval)
             logger.debug(f'Sent heartbeat message to {address}, {time.monotonic() - start_time}')
@@ -320,18 +346,13 @@ class Server(pb2_grpc.RaftServicer):
 
             return reply.success, reply.term, address
         except grpc.FutureTimeoutError:
-            logger.debug(f"Channel {address} is not ready.")
-            try:
-                reply = self.stubs[address].stub.get_leader(pb2.EmptyMessage())
-                logger.debug(f"Leader: {reply}")
-            except Exception:
-                pass
+            # logger.debug(f"Channel {address} is not ready.")
 
-            return True, 0, address
+            return False, -1, address
         except grpc.RpcError as e:
             logger.debug('dksjflsekj')
             logger.debug(str(e))
-            return True, 0, address
+            return False, -1, address
 
     def _heartbeat_if_leader(self):
         """
@@ -348,6 +369,9 @@ class Server(pb2_grpc.RaftServicer):
             # If server is a Leader
             if self.state == ServerStates.LEADER and not self.is_suspended:
                 logger.debug('inside heartbeat if')
+                logger.debug(str(self.next_index))
+                logger.debug(str(self.match_index))
+                logger.debug(f'{self.log_entries}')
                 start_time = time.monotonic()
                 with self.mutex:
                     # Send messages to other nodes
@@ -375,35 +399,43 @@ class Server(pb2_grpc.RaftServicer):
             return True
 
     def _process_logs(self, request, _) -> bool:
-        # Check that log at the index specified in the request contains the same term number.
-        # If no, then there is inconsistency in logs and log at that index (and all consequent) should be deleted.
-        logger.debug(f"In process logs. Request: {request}")
-        if len(self.log_entries) != 0 and request.prev_log_index > 0 \
-                and self.log_entries[request.prev_log_index - 1].term != request.term:
-            logger.debug(f"Log entry. Terms are not equal: {self.log_entries[request.prev_log_index - 1].term}, "
-                         f"{request.term}")
-            self.log_entries = self.log_entries[:request.prev_log_index - 1]
+        logger.debug(f"process logs. Request: {request}. ")
+        logger.debug(f"{len(self.log_entries)} {request.prev_log_index - 1}")
+        logger.debug(f"{len(self.log_entries)} {request.prev_log_index}")
+        if len(self.log_entries) > request.prev_log_index - 1 and request.prev_log_index != 0:
+            logger.debug("1")
+            logger.debug(f"{self.log_entries[request.prev_log_index - 1].term} ")
+        if len(self.log_entries) > request.prev_log_index:
+            logger.debug("2")
+            logger.debug(f"{self.log_entries[request.prev_log_index].term}")
 
-        logger.debug(f"{request.prev_log_index}, {self._prev_log_index(len(self.log_entries))};"
-                     f"{request.prev_log_term}, {self._prev_log_term(len(self.log_entries))}")
-        if request.prev_log_index == self._prev_log_index(len(self.log_entries)) \
-                and request.prev_log_term == self._prev_log_term(len(self.log_entries)):
-            self.log_entries.append(request.log_entry)
-            return True
-        else:
+        if len(self.log_entries) <= request.prev_log_index - 1 \
+                or (len(self.log_entries) > request.prev_log_index - 1
+                    and request.prev_log_index != 0
+                    and self.log_entries[request.prev_log_index - 1].term != request.prev_log_term):
             return False
+        logger.debug('pp')
+
+        if len(self.log_entries) > request.prev_log_index \
+                and self.log_entries[request.prev_log_index].term != request.term:
+            self.log_entries = self.log_entries[:request.prev_log_index]
+
+        self.log_entries.append(request.log_entry)
+        logger.debug(f"Logs now: {self.log_entries}")
+
+        return True
 
     def append_entries(self, request, context):
         """
         Function that receives heartbeat messages.
         """
 
-        logger.debug(f"beg append_entries, {time.monotonic() - self.previous_reset_time}.")
+        # logger.debug(f"beg append_entries, {time.monotonic() - self.previous_reset_time}.")
         with self.mutex:
             # update time of last received message and its type
             self.previous_reset_time = time.monotonic()
             self.last_received_message_type = 'append_entries'
-            logger.debug("append_entries")
+            # logger.debug("append_entries")
 
             # if this node is suspended - return an error
             if self.is_suspended:
@@ -425,9 +457,16 @@ class Server(pb2_grpc.RaftServicer):
                 logs_reply = True
 
             # Set commit_index the same as leader's
-            self.commit_index = request.leader_commit_index
+            if request.leader_commit_index > self.commit_index:
+                logger.debug(f"Update commit index. "
+                             f"Old: {self.commit_index}. "
+                             f"New:{request.leader_commit_index} "
+                             f"or {self.log_entries[-1].index if len(self.log_entries) > 0 else 0}")
+                self.commit_index = min(request.leader_commit_index,
+                                        self.log_entries[-1].index if len(self.log_entries) > 0 else 0)
 
-            logger.debug(f"In append entries. Replies: {heartbeats_reply}, {logs_reply}.")
+            if not heartbeats_reply and logs_reply:
+                logger.debug(f"In append entries. Replies: {heartbeats_reply}, {logs_reply}.")
 
             return pb2.AppendEntryReply(term=self.term, success=heartbeats_reply and logs_reply)
 
@@ -446,23 +485,28 @@ class Server(pb2_grpc.RaftServicer):
             logger.debug(str(request))
             # update timer because a new message is received
             self.previous_reset_time = time.monotonic()
+            logger.debug("lkejrls")
             self.last_received_message_type = 'request_vote'
 
+            logger.debug('sldkfjwoel')
+            logger.debug(f"Request vote {request.last_log_index} {len(self.log_entries)}")
             # if term of candidate is greater
-            if self.term < request.term:
+            if self.term < request.term and request.last_log_index >= len(self.log_entries):
                 # update your own term
                 self.term = request.term
+                # vote for this candidate
+                self._set_voted_for(request.candidate_id)
                 # server becomes a follower
                 logger.debug("become follower in request_vote")
                 self._become_follower()
-
-                self._set_voted_for(request.candidate_id)
 
                 # send positive answer
                 reply = pb2.RequestVoteReply(term=self.term, result=True)
 
             # if server and candidate are in the same term and server didn't yet vote for anyone in this term
-            elif self.term == request.term and self.voted_for is None and self.state != ServerStates.LEADER:
+            # and log of the candidate is at least as up-to-date as this node's log.
+            elif self.term == request.term and self.voted_for is None and self.state != ServerStates.LEADER \
+                    and request.last_log_index >= len(self.log_entries):
                 # server saves info that it voted for this candidate
                 self._set_voted_for(request.candidate_id)
 
@@ -542,49 +586,17 @@ class Server(pb2_grpc.RaftServicer):
 
         return pb2.EmptyMessage()
 
-    def _broadcast_request(self, request_function):
-        def helper(address: str):
-            try:
-                logger.debug(f'Sending heartbeat message to {address}')
-                reply = request_function(self.stubs[address].stub)
-                logger.debug(f'Sent heartbeat message to {address}')
-                logger.debug(str(reply))
-
-                return reply
-            except grpc._channel._InactiveRpcError or grpc.RpcError as e:
-                logger.info(str(e))
-                return
-
-        return self.pool.map(helper, self.other_addresses)
-
     def _prev_log_index(self, index):
         return self.log_entries[index - 1].index if index > 0 else 0
 
     def _prev_log_term(self, index):
         return self.log_entries[index - 1].term if index > 0 else 0
 
-    # def _notify_followers_about_log(self, log_requests):
-    #     append_entry_request = pb2.AppendEntryRequest(term=self.term,
-    #                                                   leader_id=self.leader_id,
-    #                                                   prev_log_index=self._prev_log_index(),
-    #                                                   prev_log_term=self._prev_log_term(),
-    #                                                   entries=log_requests,
-    #                                                   leader_commit_index=self.commit_index)
-    #
-    #     return self._broadcast_request(lambda stub: stub.append_entries(append_entry_request))
-
-    def _commit_if_majority_acknowledged(self, replies):
-        num_pos_acks = 0
-        for reply in replies:
-            num_pos_acks += int(reply.success)
-
-            if num_pos_acks == len(self.other_addresses) // 2:
-                self.leader_commit_index = len(self.log_entries)
-                break
-
     def setval(self, request, context):
         if self.state == ServerStates.FOLLOWER:
             # If this is a follower - redirect the request to the leader
+            logger.debug(
+                f"Redirecting request {request} to leader {self.leader_id} at address {self.servers_info[self.leader_id]}.")
             return self.stubs[self.servers_info[self.leader_id]].stub.setval(request)
         elif self.state == ServerStates.CANDIDATE:
             # If this is a candidate - return negative reply. It cannot do anything yet.
@@ -592,28 +604,29 @@ class Server(pb2_grpc.RaftServicer):
             return pb2.SetValReply(is_success=False)
         elif self.state == ServerStates.LEADER:
             # Append new log to list of logs.
-            index = self._prev_log_index(len(self.log_entries)) + 1
-            self.log_entries.append(pb2.LogEntry(index=index,
-                                                 term=self.term,
-                                                 log=f"{request.key}={request.value}"
-                                                 ))
+            with self.mutex:
+                index = self._prev_log_index(len(self.log_entries)) + 1
+                self.log_entries.append(pb2.LogEntry(index=index,
+                                                     term=self.term,
+                                                     log=f"{request.key}={request.value}"
+                                                     ))
 
             # Wait until log is replicated and committed.
-            print('before wait')
+            logger.debug('before wait')
             self.committed_events[index] = Event()
             self.committed_events[index].wait()
-            print('after wait')
+            logger.debug('after wait')
 
             return pb2.SetValReply(is_success=True)
         else:
             raise Exception("Unexpected state.")
 
     def getval(self, request, context):
-        logger.info(f'{self.log_entries}')
-        for log_entry in self.log_entries:
-            if '=' in log_entry.log:
-                key, value = log_entry.log.split('=')
-                if key == request.key:
+        logger.debug(f'{self.log_entries}')
+        for i in range(self.commit_index - 1, -1, -1):
+            if '=' in self.log_entries[i].log:
+                key, value = self.log_entries[i].log.split('=')
+                if i < self.commit_index and key == request.key:
                     return pb2.GetValReply(value=value, is_success=True)
         else:
             return pb2.GetValReply(value='', is_success=False)
@@ -641,22 +654,25 @@ if __name__ == '__main__':
         server_id = int(sys.argv[1])
         # Print the address of this server
         server_address = which_address(config_path, server_id)
+        thread_pool = futures.ThreadPoolExecutor(max_workers=20)
+        for i in range(10):
+            thread_pool.submit(lambda: time.sleep(0.5))
 
         # setup and run server
-        grpc_server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+        grpc_server = grpc.server(futures.ThreadPoolExecutor(max_workers=20))
         server = Server(server_id, config_path)
         try:
             t1 = time.monotonic()
             pb2_grpc.add_RaftServicer_to_server(server, grpc_server)
             t2 = time.monotonic()
-            print(t2 - t1)
+            logger.debug(t2 - t1)
             grpc_server.add_insecure_port(server_address)
             t3 = time.monotonic()
-            print(t3 - t2)
+            logger.debug(t3 - t2)
 
             t4 = time.monotonic()
             grpc_server.start()
-            print(t4 - t3)
+            logger.debug(t4 - t3)
             grpc_server.wait_for_termination()
         except KeyboardInterrupt:
             logger.info("Shutdown...")
