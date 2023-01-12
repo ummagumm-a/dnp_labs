@@ -32,7 +32,11 @@ A chat application. There are two workers which offer different services and wor
 Client CLI offers following functions: `reverse <text>`, `split <text>`, `isprime <num> <num> ...`. Appropriate functions will be called for all of these queries. But what's important is that they will be actually executed on a server.
 
 # Lab 5
+**gRPC** is used here.
+
 Implementation of [Chord](https://en.wikipedia.org/wiki/Chord_(peer-to-peer)). Done together with @ayhem18.
 
 # Lab 6
-Implementation of [Raft](https://en.wikipedia.org/wiki/Raft_(algorithm)) (only leader election part).
+**gRPC** is used here.
+
+Implementation of [Raft](https://en.wikipedia.org/wiki/Raft_(algorithm)).
